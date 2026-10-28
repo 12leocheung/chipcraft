@@ -16,6 +16,10 @@ const TEX = {
   chip_input: 'assets/io_in.png',
   chip_output: 'assets/io_out.png',
   chip: 'assets/chip.png',
+  piston_side: 'assets/piston_side.png',
+  piston_face: 'assets/piston_face.png',
+  piston_head: 'assets/piston_head.png',
+  sticky_face: 'assets/sticky_face.png',
 };
 
 const ITEM_ICON = {
@@ -35,6 +39,8 @@ const ITEM_ICON = {
   lever: 'assets/lever_item.png',
   redstone_torch: 'assets/torch_item.png',
   redstone_dust: 'assets/redstone_item.png',
+  piston: 'assets/piston_item.png',
+  sticky_piston: 'assets/sticky_piston_item.png',
 };
 
 const DIR = {
@@ -200,6 +206,8 @@ export function createBridge() {
 
   // ---------------------------------------------------------------- components
   const components = new Map();
+  const pistonAnims = new Map();       // only pistons, so the per-frame pass stays tiny
+  const FACE_INDEX = { east: 0, west: 1, up: 2, down: 3, south: 4, north: 5 };
 
   const stickMat = new THREE.MeshLambertMaterial({ map: texture('lever') });
   const plateMat = new THREE.MeshLambertMaterial({ map: (() => {
@@ -267,6 +275,37 @@ export function createBridge() {
       group.add(plate, handle);
       record.handle = handle;
       record.layout = layout;
+    } else if (kind === 'piston' || kind === 'sticky_piston') {
+      const faceIndex = FACE_INDEX[face];
+      const horizontal = face === 'east' || face === 'west';
+      const vertical = face === 'up' || face === 'down';
+      const sideMat = new THREE.MeshLambertMaterial({ map: texture('piston_side') });
+      const headSideMat = new THREE.MeshLambertMaterial({ map: texture('piston_head') });
+      const faceMat = new THREE.MeshLambertMaterial({
+        map: texture(kind === 'sticky_piston' ? 'sticky_face' : 'piston_face'),
+      });
+
+      const bodyMats = new Array(6).fill(sideMat);
+      bodyMats[faceIndex] = faceMat;                 // the plate the rod comes out of
+      bodyMats[faceIndex ^ 1] = headSideMat;         // the back of the base
+      group.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), bodyMats));
+
+      const dims = horizontal ? [0.5, 0.98, 0.98]
+        : vertical ? [0.98, 0.5, 0.98]
+          : [0.98, 0.98, 0.5];
+      const headMats = new Array(6).fill(headSideMat);
+      headMats[faceIndex] = faceMat;
+      const head = new THREE.Mesh(new THREE.BoxGeometry(dims[0], dims[1], dims[2]), headMats);
+      const dir = DIR[face];
+      head.position.set(dir[0] * 0.2, dir[1] * 0.2, dir[2] * 0.2);
+      head.visible = false;
+      group.add(head);
+
+      record.head = head;
+      record.headDir = dir;
+      record.slide = 0;
+      record.target = 0;
+      pistonAnims.set(key, record);
     } else if (kind === 'redstone_dust') {
       const material = new THREE.MeshBasicMaterial({ color: dustDark });
       const center = box(0.4, 0.05, 0.4, material);
@@ -294,6 +333,26 @@ export function createBridge() {
     if (!record) return;
     scene.remove(record.group);
     components.delete(key);
+    pistonAnims.delete(key);
+  }
+
+  function setPiston(x, y, z, extended) {
+    const record = pistonAnims.get(keyOf(x, y, z));
+    if (!record) return;
+    record.target = extended ? 1 : 0;
+  }
+
+  function animatePistons(dt) {
+    if (!pistonAnims.size) return;
+    const step = Math.min(1, dt * 12);
+    for (const record of pistonAnims.values()) {
+      if (record.slide === record.target) continue;
+      const delta = record.target - record.slide;
+      record.slide += Math.sign(delta) * Math.min(step, Math.abs(delta));
+      const s = 0.2 + 0.55 * record.slide;
+      record.head.position.set(record.headDir[0] * s, record.headDir[1] * s, record.headDir[2] * s);
+      record.head.visible = record.slide > 0.02;
+    }
   }
 
   function setLeverOn(x, y, z, on) {
@@ -648,6 +707,7 @@ export function createBridge() {
         console.error(error);
       }
     }
+    animatePistons(dt);
     flush();
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
@@ -670,6 +730,7 @@ export function createBridge() {
     setLeverOn,
     setTorchLit,
     setDustLevel,
+    setPiston,
     addChip,
     setChipPorts,
     removeChip,

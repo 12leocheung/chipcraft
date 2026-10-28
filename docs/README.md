@@ -1,7 +1,8 @@
 # Chipcraft — browser build
 
-The same game as `../main.py`: a voxel sandbox with levers, torches, redstone dust,
-chip boxes you package into reusable chips, and chips nested inside chips.
+The same game as `../main.py`, plus pistons: a voxel sandbox with levers, torches,
+redstone dust, pistons and sticky pistons, chip boxes you package into reusable
+chips, and chips nested inside chips.
 
 The game code is Python. It runs in the browser through
 [Pyodide](https://pyodide.org) (CPython compiled to WebAssembly) and draws through
@@ -59,6 +60,22 @@ from a different folder, keep `index.html`, `game.py`, `bridge.js`, `style.css` 
 | `E` | Inventory (click a slot to pick up, click another to swap) |
 | `K` | Package the chip box you are looking at into a chip |
 | `L` | Unpack a placed chip back into editable blocks |
+
+## Pistons
+
+Right-click the ground, a wall or a ceiling while holding a piston. It faces **you**
+when it goes down, the way Minecraft's do, so it shoves blocks away from you — power
+it from behind with a lever, torch, dust line or chip output.
+
+- It pushes up to **12 blocks** in a line, one cell along its facing. A 13th block, or
+  any component, chip or water in the way, and the push fails and nothing moves.
+- Remove the power and it retracts. A **sticky** piston drags the one block against its
+  head back with it; a plain piston leaves the blocks where they were.
+- A signal in **front** of the head never activates it (only behind, the sides, or the
+  block it sits against). There is no quasi-connectivity, unlike Java Edition.
+- A piston is a solid block: you can stand on it or on an extended head, and it blocks
+  placement. Breaking a piston takes its head with it.
+- Blocks pushed onto a torch, dust or lever break that component, as in Minecraft.
 
 ## Notes on the port
 

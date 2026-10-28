@@ -28,6 +28,7 @@ WATER_LIMIT = 3000          # stop runaway flooding from eating the frame budget
 blocks = {}                 # (x, y, z) -> block type
 components = {}             # (x, y, z) -> RedstoneComponent
 placed_chips = {}           # (x, y, z) -> Chip (every cell the chip covers)
+piston_head_map = {}        # (x, y, z) -> Piston, for every head that is out
 
 DIRS = {
     'up': (0, 1, 0), 'down': (0, -1, 0),
@@ -40,7 +41,9 @@ OUTSIDE_DIR = {
 }
 OPPOSITE_FACE = {'up': 'down', 'down': 'up', 'north': 'south',
                  'south': 'north', 'east': 'west', 'west': 'east'}
-COMPONENT_TYPES = ('lever', 'redstone_torch', 'redstone_dust')
+COMPONENT_TYPES = ('lever', 'redstone_torch', 'redstone_dust', 'piston', 'sticky_piston')
+PISTON_KINDS = ('piston', 'sticky_piston')
+PISTON_PUSH_LIMIT = 12      # Minecraft refuses to push more than 12 blocks at once
 
 
 def addpos(pos, d):
@@ -68,7 +71,13 @@ def dir_from_vec(v):
 
 def is_solid(x, y, z):
     t = blocks.get((x, y, z))
-    return t is not None and t != 'water_block'
+    if t is not None and t != 'water_block':
+        return True
+    cell = (x, y, z)
+    if cell in piston_head_map:
+        return True
+    comp = components.get(cell)
+    return comp is not None and comp.kind in PISTON_KINDS
 
 
 def block_type_at(pos):
@@ -80,7 +89,8 @@ def is_opaque_support(pos):
 
 
 def occupied(pos):
-    return pos in blocks or pos in placed_chips
+    return (pos in blocks or pos in placed_chips or pos in components
+            or pos in piston_head_map)
 
 
 # ====================================================================
@@ -242,13 +252,147 @@ class RedstoneDust(RedstoneComponent):
         B.setDustLevel(self.pos[0], self.pos[1], self.pos[2], self.power_level, mask)
 
 
+class Piston(RedstoneComponent):
+    """A piston block that shoves up to 12 blocks along its facing direction.
+
+    ``face`` is the direction the head points in, so the cell the base sits against
+    is the opposite one. Sticky pistons pull the single block against the head back
+    with them when they retract, the way Minecraft's do.
+    """
+
+    def __init__(self, pos, facing, sticky=False):
+        self.kind = 'sticky_piston' if sticky else 'piston'
+        self.facing = facing
+        self.sticky = sticky
+        self.extended = False
+        super().__init__(pos, facing)
+        self.attached_to = addpos(self.pos, DIRS[OPPOSITE_FACE[facing]])
+        self._push_state()
+
+    def _push_state(self):
+        B.setPiston(self.pos[0], self.pos[1], self.pos[2], 1 if self.extended else 0)
+
+    def front_cell(self):
+        """The cell the head occupies while extended."""
+        return addpos(self.pos, DIRS[self.facing])
+
+    def grabbed_cell(self):
+        """The block pressed against the head while extended."""
+        return addpos(self.front_cell(), DIRS[self.facing])
+
+    def remove(self):
+        if self.extended:
+            piston_head_map.pop(self.front_cell(), None)
+            self.extended = False
+        super().remove()
+
+    def try_extend(self, moved):
+        step = DIRS[self.facing]
+        chain, cell = [], self.front_cell()
+        while True:
+            btype = blocks.get(cell)
+            if btype is None or btype == 'water_block' or cell in components:
+                break
+            chain.append(cell)
+            if len(chain) > PISTON_PUSH_LIMIT:
+                return False
+            cell = addpos(cell, step)
+        if cell in blocks or cell in components or cell in placed_chips:
+            return False        # the far end of the line is blocked
+
+        for src in reversed(chain):
+            dst = addpos(src, step)
+            move_block(src, dst)
+            moved.add(dst)
+        self.extended = True
+        piston_head_map[self.front_cell()] = self
+        self._push_state()
+        return True
+
+    def retract(self, moved):
+        grab = self.grabbed_cell()
+        piston_head_map.pop(self.front_cell(), None)
+        self.extended = False
+        self._push_state()
+
+        if not self.sticky or grab in moved:
+            return
+        btype = blocks.get(grab)
+        if btype is None or btype == 'water_block' or grab in components:
+            return
+        dest = self.front_cell()
+        if dest in blocks or dest in components or dest in placed_chips:
+            return
+        move_block(grab, dest)
+        moved.add(dest)
+
+
+def move_block(src, dst):
+    """Shift a block one cell for a piston, without triggering a redstone re-tick."""
+    btype = blocks.pop(src)
+    blocks[dst] = btype
+    B.removeBlock(src[0], src[1], src[2])
+    B.setBlock(btype, dst[0], dst[1], dst[2])
+    if btype == 'water_block':
+        water_cells.discard(src)
+        water_cells.add(dst)
+    # anything that was stuck onto the moved block comes off
+    for d in DIRS.values():
+        comp = components.get(addpos(src, d))
+        if comp is not None and not isinstance(comp, Piston) and comp.attached_to == src:
+            break_redstone_component(comp)
+
+
+def piston_at(pos):
+    comp = components.get(pos)
+    return comp if isinstance(comp, Piston) else None
+
+
+def conducts_power(pos):
+    """A block or a piston body carries power into the piston next to it."""
+    return is_opaque_support(pos) or piston_at(pos) is not None
+
+
+def piston_is_powered(piston, powered, chip_cells):
+    front = piston.front_cell()
+    if piston.pos in powered or piston.attached_to in powered:
+        return True
+    for name, d in DIRS.items():
+        n = addpos(piston.pos, d)
+        if n == front:
+            continue            # a signal in front of the head never powers it
+        if n in powered or n in chip_cells:
+            return True
+        comp = components.get(n)
+        if comp is not None and comp.kind == 'redstone_dust' and comp.power_level > 0:
+            return True
+    return False
+
+
+def tick_pistons(powered, chip_cells):
+    moved = set()
+    for piston in sorted((c for c in components.values() if isinstance(c, Piston)),
+                         key=lambda p: p.pos):
+        want = piston_is_powered(piston, powered, chip_cells)
+        if want and not piston.extended:
+            piston.try_extend(moved)
+        elif not want and piston.extended:
+            piston.retract(moved)
+
+
 def break_redstone_component(comp):
     comp.remove()
 
 
-def try_place_component(block_type, place_pos, face):
+def try_place_component(block_type, place_pos, face, facing=None):
     if occupied(place_pos) or place_pos in components:
         return False
+    if block_type in PISTON_KINDS:
+        # pistons are full blocks, so they need no support behind them
+        Piston(place_pos, facing or facing_toward_player(place_pos),
+               block_type == 'sticky_piston')
+        redstone_tick()
+        return True
     support = addpos(place_pos, DIRS[face])
     support_bt = block_type_at(support)
     if support_bt in (None, 'water_block'):
@@ -611,7 +755,8 @@ def unpack_chip_for_editing(chip):
     for item in data.get('contained_components', []):
         rp = item['pos']
         target = (pos[0] + rp[0], pos[1] + rp[1], pos[2] + rp[2])
-        try_place_component(item['type'], target, item['face'])
+        facing = item['face'] if item['type'] in PISTON_KINDS else None
+        try_place_component(item['type'], target, item['face'], facing=facing)
         if item['type'] == 'lever' and item.get('powered'):
             comp = components.get(target)
             if comp is not None:
@@ -647,7 +792,7 @@ def remove_block(pos):
     for neighbour in ((x + 1, y, z), (x - 1, y, z), (x, y + 1, z),
                       (x, y - 1, z), (x, y, z + 1), (x, y, z - 1)):
         comp = components.get(neighbour)
-        if comp is not None and comp.attached_to == pos:
+        if comp is not None and not isinstance(comp, Piston) and comp.attached_to == pos:
             break_redstone_component(comp)
     if entry == 'water_block':
         water_cells.discard(pos)
@@ -703,8 +848,8 @@ inv_open = False
 
 def init_inventory():
     starting = ['surrounder', 'chip_input', 'chip_output', 'lever', 'redstone_torch',
-                'redstone_dust', 'stone', 'oak_plank', 'glass', 'grass', 'dirt', 'brick',
-                'sand', 'water_block', 'oak_log']
+                'redstone_dust', 'piston', 'sticky_piston', 'stone', 'oak_plank', 'glass',
+                'grass', 'dirt', 'brick', 'sand', 'water_block', 'oak_log']
     for i, block_type in enumerate(starting):
         items[i] = {'type': block_type, 'count': 64, 'chip_data': None}
 
@@ -813,6 +958,23 @@ def camera_dir():
     cp, sp = math.cos(pitch), math.sin(pitch)
     cy, sy = math.cos(yaw), math.sin(yaw)
     return (-sy * cp, sp, -cy * cp)
+
+
+def facing_toward_player(pos):
+    """A freshly placed piston faces the player, so it pushes away from the wall."""
+    feet = py - EYE_HEIGHT
+    near = abs(px - pos[0]) < 1.6 and abs(pz - pos[2]) < 1.6
+    if near and pos[1] < feet - 0.4:
+        return 'up'                 # placed in a hole I am standing next to
+    if near and pos[1] > py + 0.3:
+        return 'down'               # placed overhead
+    dx, dz = px - pos[0], pz - pos[2]
+    if abs(dx) < 1e-6 and abs(dz) < 1e-6:
+        d = camera_dir()
+        dx, dz = -d[0], -d[2]
+    if abs(dx) >= abs(dz):
+        return 'east' if dx > 0 else 'west'
+    return 'south' if dz > 0 else 'north'
 
 
 def player_collides(x, y, z):
@@ -948,7 +1110,8 @@ def raycast(max_dist=6.0):
     t = 0.0
     normal = (0, 0, 0)
     while True:
-        if (cx, cy, cz) in blocks or (cx, cy, cz) in placed_chips or (cx, cy, cz) in components:
+        if ((cx, cy, cz) in blocks or (cx, cy, cz) in placed_chips
+                or (cx, cy, cz) in components or (cx, cy, cz) in piston_head_map):
             return (cx, cy, cz), normal
         if t_max_x < t_max_y and t_max_x < t_max_z:
             cx += step_x
@@ -977,6 +1140,11 @@ def break_target():
     cell, normal = raycast(6.0)
     if cell is None:
         return
+    head_owner = piston_head_map.get(cell)
+    if head_owner is not None:
+        head_owner.remove()
+        redstone_tick()
+        return
     chip = placed_chips.get(cell)
     if chip is not None:
         chip.destroy()
@@ -995,6 +1163,9 @@ def use_or_place():
     """Right click: toggle/attach first, and only place when nothing was used."""
     cell, normal = raycast(6.0)
     held = get_selected_block()
+
+    if cell is not None and cell in piston_head_map:
+        return                      # the head is part of the piston, not a surface
 
     if cell is not None and cell in components:
         comp = components[cell]
@@ -1186,6 +1357,7 @@ def redstone_tick():
     dust_comps = [c for c in components.values() if c.kind == 'redstone_dust']
     levels = {c.pos: 0 for c in dust_comps}
     strong_powered = set()
+    chip_cells = set()
 
     for comp in list(components.values()):
         if comp.kind == 'redstone_torch' and comp.lit:
@@ -1211,6 +1383,8 @@ def redstone_tick():
                 off = p['placed_offset']
                 wp = (chip.pos[0] + off[0], chip.pos[1], chip.pos[2] + off[1])
                 adj = addpos(wp, OUTSIDE_DIR[p['side']])
+                chip_cells.add(wp)
+                chip_cells.add(adj)
                 if adj in levels:
                     levels[adj] = 15
 
@@ -1248,11 +1422,16 @@ def redstone_tick():
         comp.power_level = levels[comp.pos]
         if comp.power_level >= 1:
             below = addpos(comp.pos, (0, -1, 0))
-            if is_opaque_support(below):
+            if conducts_power(below):
                 powered.add(below)
             for name in (comp.connected_dirs or ('north', 'south', 'east', 'west')):
                 nb = addpos(comp.pos, DIRS[name])
-                if is_opaque_support(nb):
+                if conducts_power(nb):
+                    powered.add(nb)
+            # live dust also powers a piston right beside it, whichever way it points
+            for name in ('north', 'south', 'east', 'west'):
+                nb = addpos(comp.pos, DIRS[name])
+                if piston_at(nb) is not None:
                     powered.add(nb)
 
     for comp in dust_comps:
@@ -1261,6 +1440,8 @@ def redstone_tick():
     for comp in list(components.values()):
         if comp.kind == 'redstone_torch':
             comp.tick(powered)
+
+    tick_pistons(powered, chip_cells)
 
 
 def frame(dt):

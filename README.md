@@ -1,7 +1,8 @@
 # Chipcraft
 
-A voxel sandbox with redstone: levers, torches, dust, and **chips** — build a logic box
-out of blocks, package it into a reusable chip, then place chips inside other chips.
+A voxel sandbox with redstone: levers, torches, dust, pistons and sticky pistons, and
+**chips** — build a logic box out of blocks, package it into a reusable chip, then place
+chips inside other chips.
 
 The game is written in Python. It runs in the browser through
 [Pyodide](https://pyodide.org) (CPython compiled to WebAssembly) and draws with
@@ -25,6 +26,7 @@ The game is written in Python. It runs in the browser through
 ## Layout
 
 - `docs/` — the website (this is what GitHub Pages serves)
+- `docs/README.md` — controls, piston behaviour and hosting notes
 - `docs/game.py` — world, redstone simulation, chips, inventory, physics
 - `docs/bridge.js` — three.js renderer and input, driven from Python
 - `main.py` — the original desktop version of the game (Ursina / Panda3D)
