@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Chipcraft</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="assets/chip.png">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="view"></div>
+<div id="crosshair"></div>
+<img id="held" alt="">
+<div id="tag"></div>
+<div id="hotbar"></div>
+
+<div id="inventory">
+  <div class="inv-window">
+    <h2>Creative Inventory</h2>
+    <p class="hint">Click a slot to pick an item up, click another to swap it in.</p>
+    <div id="inv-grid"></div>
+    <div class="divider"></div>
+    <p class="hint">Hotbar</p>
+    <div id="inv-hotbar"></div>
+  </div>
+</div>
+
+<div id="chip-modal">
+  <div class="dialog">
+    <h2 id="chip-title">Save Chip</h2>
+    <input id="chip-name" type="text" placeholder="name this chip (optional)" autocomplete="off" spellcheck="false">
+    <div class="buttons">
+      <button id="chip-save" class="primary">Save to inventory</button>
+      <button id="chip-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="lock-hint">Click to look around</div>
+<div id="help">
+  <b>WASD</b> move · <b>Space</b> jump · <b>mouse</b> look · <b>left click</b> break ·
+  <b>right click</b> use / place · <b>E</b> inventory · <b>K</b> save chip · <b>L</b> unpack chip ·
+  <b>1-9</b> / wheel slots
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p id="status">Loading the Python runtime…</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script type="module">
+  import { createBridge } from './bridge.js';
+
+  const status = document.getElementById('status');
+  const loading = document.getElementById('loading');
+
+  function fail(message, error) {
+    console.error(error || message);
+    loading.classList.remove('done');
+    status.textContent = message;
+    loading.classList.add('error');
+  }
+
+  window.gameBridge = createBridge();
+
+  try {
+    status.textContent = 'Loading the Python runtime… (about 10 MB, cached after the first visit)';
+    const pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' });
+    window.pyodide = pyodide;
+    status.textContent = 'Starting the game…';
+    const response = await fetch('game.py', { cache: 'no-cache' });
+    if (!response.ok) throw new Error('Could not load game.py (' + response.status + ')');
+    const source = await response.text();
+    await pyodide.runPythonAsync(source);
+  } catch (error) {
+    fail('Could not start the game: ' + (error && error.message ? error.message : error), error);
+  }
+</script>
+</body>
+</html>
