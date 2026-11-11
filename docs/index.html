@@ -83,8 +83,8 @@ function doSeal(f){let ni=0,no=0;
  return nameBox('Chip '+cn,name=>{let cert=0;const cells=serR(world,x0,y0,bw,bh);
  for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++)world.set(x,y,null);
  frames=frames.filter(q=>q!==f);
- const D={id:'c'+cn,name:name,w:2,h:Math.max(ni,no),iw:bw,ih:bh,ext:{},cells,nIn:ni,nOut:no,hue:(cn*47)%360,pn:{}};cn++;
- ports(cells,'in').forEach((p,i)=>D.ext['0,'+i]={k:'in',ix:p.x,iy:p.y,n:i+1});ports(cells,'out').forEach((p,i)=>D.ext['1,'+i]={k:'out',ix:p.x,iy:p.y,n:i+1});
+ const D={id:'c'+cn,name:name,w:2,h:2*Math.max(ni,no)-1,iw:bw,ih:bh,ext:{},cells,nIn:ni,nOut:no,hue:(cn*47)%360,pn:{}};cn++;
+ ports(cells,'in').forEach((p,i)=>D.ext['0,'+2*i]={k:'in',ix:p.x,iy:p.y,n:i+1});ports(cells,'out').forEach((p,i)=>D.ext['1,'+2*i]={k:'out',ix:p.x,iy:p.y,n:i+1});
  LIB[D.id]=D;order.push(D.id);
  for(let k=0;k<G.length;k++){if(done[k]||G[k].i!=ni||G[k].o!=no)continue;
   if(test(D,G[k])){done[k]=1;cert=1;msg('✔ '+G[k].n+' certified!'+(done.every(Boolean)?' — THE ENGINE WAKES. Sandbox is yours.':''));break}}
