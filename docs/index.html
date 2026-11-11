@@ -17,7 +17,7 @@ button.on{background:var(--ac);color:#111;border-color:var(--ac)}
 const W=480,H=270,cv=document.getElementById('cv'),X=cv.getContext('2d'),DX=[1,0,-1,0],DY=[0,1,0,-1],N=32;
 const inb=(g,x,y)=>g.inf||(x>=0&&y>=0&&x<g.w&&y<g.h);
 const K=(x,y)=>(x+1e5)*2e5+(y+1e5),dec=k=>[Math.floor(k/2e5)-1e5,k%2e5-1e5];
-function serW(){const o=[];for(const[k,c]of world.m){const[x,y]=dec(k);if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,on:c.on,val:c.val})}return o}
+function serW(){const o=[];for(const[k,c]of world.m){const[x,y]=dec(k);if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,auto:c.auto,on:c.on,val:c.val})}return o}
 class Grid{
  constructor(w,h,inf){this.w=w;this.h=h;this.inf=inf;this.m=new Map();this.dirty=1;this.nets=[]}
  get(x,y){return this.m.get(K(x,y))||null}
@@ -26,9 +26,20 @@ class Grid{
   if(c.t=='key')return c.on?1:0;
   if(c.t=='node')return c.s&&c.d==d?1:0;
   if(c.t=='in')return c.val?1:0;
-  if(c.t=='fp'){const D=c.inst.def,pe=D.ext[c.lx+','+c.ly];if(pe&&pe.k=='out'&&(pe.a?(c.lx+DX[d]<0||c.ly+DY[d]<0||c.lx+DX[d]>=D.w||c.ly+DY[d]>=D.h):d==0))return c.inst.g.get(pe.ix,pe.iy).lit?1:0}
+  if(c.t=='fp'){const D=c.inst.def,pe=D.ext[c.lx+','+c.ly];if(pe&&pe.k=='out'&&(pe.a?(c.lx+DX[d]<0||c.ly+DY[d]<0||c.lx+DX[d]>=D.w||c.ly+DY[d]>=D.h):(pe.s?d==1:d==0)))return c.inst.g.get(pe.ix,pe.iy).lit?1:0}
   return 0}
  sig(x,y,d){const nx=x+DX[d],ny=y+DY[d],n=this.get(nx,ny);if(!n)return 0;if(n.t=='thread')return n.net&&n.net.p?1:0;return this.emit(nx,ny,(d+2)%4)}
+ drv(x,y,d,self){const c=this.get(x,y);if(!c||c===self)return 0;
+  if(c.t=='key'||c.t=='in')return 1;
+  if(c.t=='node')return c.auto&&!c.ok?0:(c.d==d?1:0);
+  if(c.t=='fp'){const pe=c.inst.def.ext[c.lx+','+c.ly];if(pe&&pe.k=='out')return pe.a?1:((pe.s?d==1:d==0)?1:0)}
+  return 0}
+ sideDrv(c,x,y,s){const nx=x+DX[s],ny=y+DY[s],n=this.get(nx,ny);if(!n)return 0;
+  if(n.t=='thread')return n.net&&n.net.s.some(([a,b,d])=>!(a==x&&b==y)&&this.drv(a,b,d,c));
+  return this.drv(nx,ny,(s+2)%4,c)}
+ orient(){const A=[];for(const[k,c]of this.m)if(c.t=='node'&&c.auto){const[x,y]=dec(k);A.push([c,x,y]);c.ok=0}
+  for(let ch=1;ch&&A.length;){ch=0;for(const[c,x,y]of A){if(c.ok)continue;
+   for(let s=0;s<4;s++)if(this.sideDrv(c,x,y,s)){let o=(s+2)%4;for(const t of[o,(s+1)%4,(s+3)%4])if(this.get(x+DX[t],y+DY[t])){o=t;break}c.d=o;c.ok=1;ch=1;break}}}}
  build(){const seen=new Set();this.nets=[];
   for(const[k,c]of this.m){const[x,y]=dec(k);if(c.t!='thread'||seen.has(c))continue;
    const net={p:0,s:[]},q=[[x,y]];seen.add(c);
@@ -36,7 +47,7 @@ class Grid{
     for(let d=0;d<4;d++){const n=this.get(a+DX[d],b+DY[d]);if(!n)continue;
      if(n.t=='thread'){if(!seen.has(n)){seen.add(n);q.push([a+DX[d],b+DY[d]])}}else net.s.push([a+DX[d],b+DY[d],(d+2)%4])}}
    this.nets.push(net)}
-  this.dirty=0}
+  this.orient();this.dirty=0}
  step(){if(this.dirty)this.build();
   for(const n of this.nets)n.p=n.s.some(([x,y,d])=>this.emit(x,y,d))?1:0;
   const up=[],ch=new Set();
@@ -44,15 +55,15 @@ class Grid{
    if(c.t=='node'){const v=this.sig(x,y,(c.d+2)%4)?0:1;up.push(()=>c.s=v)}
    else if(c.t=='lamp'||c.t=='out'){let v=0;for(let d=0;d<4;d++)v|=this.sig(x,y,d);up.push(()=>c.lit=v)}
    else if(c.t=='fp'){ch.add(c.inst);const D=c.inst.def,pe=D.ext[c.lx+','+c.ly],k=pe&&pe.k=='in'?c.inst.g.get(pe.ix,pe.iy):null;
-    if(k){let v=0;for(let d=0;d<4;d++)if(pe.a?(c.lx+DX[d]<0||c.ly+DY[d]<0||c.lx+DX[d]>=D.w||c.ly+DY[d]>=D.h):d==2)v|=this.sig(x,y,d);up.push(()=>k.val=v)}}}
+    if(k){let v=0;for(let d=0;d<4;d++)if(pe.a?(c.lx+DX[d]<0||c.ly+DY[d]<0||c.lx+DX[d]>=D.w||c.ly+DY[d]>=D.h):(pe.s?d==3:d==2))v|=this.sig(x,y,d);up.push(()=>k.val=v)}}}
   up.forEach(f=>f());ch.forEach(i=>i.g.step())}
 }
-let LIB={},order=[],S={tool:'hand',rot:0},cam={x:0,y:-40},world=new Grid(0,0,1),frames=[],done=Array(8).fill(0),cn=1,hov=[0,0],fs=null,msgT;
-const fill=(g,cells)=>{for(const e of cells){if(e.chip)put(g,e.x,e.y,e.chip);else g.set(e.x,e.y,{t:e.t,d:e.d||0,s:0,on:e.on||0,val:e.val||0,lit:0})}return g};
+let LIB={},order=[],S={tool:'hand',rot:4},cam={x:0,y:-40},world=new Grid(0,0,1),frames=[],done=Array(8).fill(0),cn=1,hov=[0,0],fs=null,msgT;
+const fill=(g,cells)=>{for(const e of cells){if(e.chip)put(g,e.x,e.y,e.chip);else g.set(e.x,e.y,{t:e.t,d:e.d||0,auto:e.auto||0,s:0,on:e.on||0,val:e.val||0,lit:0})}return g};
 const inst=D=>fill(new Grid(D.iw||D.w,D.ih||D.h),D.cells);
 function put(g,x,y,id){const D=LIB[id],i={def:D,x,y,g:inst(D)};for(let ly=0;ly<D.h;ly++)for(let lx=0;lx<D.w;lx++)g.set(x+lx,y+ly,{t:'fp',inst:i,lx,ly})}
 function serR(g,x0,y0,w,h){const o=[];for(let y=0;y<h;y++)for(let x=0;x<w;x++){const c=g.get(x0+x,y0+y);if(!c)continue;
- if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,on:c.on,val:c.val})}return o}
+ if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,auto:c.auto,on:c.on,val:c.val})}return o}
 const ports=(cells,t)=>cells.filter(e=>e.t==t).sort((a,b)=>a.y-b.y||a.x-b.x);
 const comb=(n,f)=>()=>{const T=1<<n,idx=T<=64?[...Array(T).keys()]:Array.from({length:40},(_,i)=>(i*97+13)%T);
  return idx.map(v=>{const b=[...Array(n)].map((_,i)=>v>>i&1);return[b,f(b)]})};
@@ -83,8 +94,8 @@ function doSeal(f){let ni=0,no=0;
  return nameBox('Chip '+cn,name=>{let cert=0;const cells=serR(world,x0,y0,bw,bh);
  for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++)world.set(x,y,null);
  frames=frames.filter(q=>q!==f&&!(q.x>=f.x&&q.y>=f.y&&q.x+q.w<=f.x+f.w&&q.y+q.h<=f.y+f.h));
- const D={id:'c'+cn,name:name,w:2,h:2*Math.max(ni,no)-1,iw:bw,ih:bh,ext:{},cells,nIn:ni,nOut:no,hue:(cn*47)%360,pn:{}};cn++;
- ports(cells,'in').forEach((p,i)=>D.ext['0,'+2*i]={k:'in',ix:p.x,iy:p.y,n:i+1});ports(cells,'out').forEach((p,i)=>D.ext['1,'+2*i]={k:'out',ix:p.x,iy:p.y,n:i+1});
+ const D={id:'c'+cn,name:name,w:2*Math.max(ni,no)-1,h:2,iw:bw,ih:bh,ext:{},cells,nIn:ni,nOut:no,hue:(cn*47)%360,pn:{}};cn++;
+ ports(cells,'in').forEach((p,i)=>D.ext[(Math.max(ni,no)-ni+2*i)+',0']={k:'in',s:1,ix:p.x,iy:p.y,n:i+1});ports(cells,'out').forEach((p,i)=>D.ext[(Math.max(ni,no)-no+2*i)+',1']={k:'out',s:1,ix:p.x,iy:p.y,n:i+1});
  LIB[D.id]=D;order.push(D.id);
  for(let k=0;k<G.length;k++){if(done[k]||G[k].i!=ni||G[k].o!=no)continue;
   if(test(D,G[k])){done[k]=1;cert=1;msg('✔ '+G[k].n+' certified!'+(done.every(Boolean)?' — THE ENGINE WAKES. Sandbox is yours.':''));break}}
@@ -96,9 +107,9 @@ function act(c,first){const[x,y]=c;if(!inb(world,x,y))return;const t=S.tool,cur=
   else if(first)frames=frames.filter(f=>!(x>=f.x&&y>=f.y&&x<f.x+f.w&&y<f.y+f.h));save();return}
  if(t=='seal'){const f=[...frames].reverse().find(f=>x>=f.x&&y>=f.y&&x<f.x+f.w&&y<f.y+f.h);if(f)doSeal(f);else msg('Click inside a Chip Frame');return}
  if(t[0]=='c'&&t[1]==':'){const D=LIB[t.slice(2)];for(let a=0;a<D.h;a++)for(let b=0;b<D.w;b++)if(!inb(world,x+b,y+a)||world.get(x+b,y+a))return msg('No room here');put(world,x,y,D.id);save();return}
- if(t=='node'&&cur&&cur.t=='node'){cur.d=S.rot;return}
+ if(t=='node'&&cur&&cur.t=='node'){cur.d=S.rot%4;cur.auto=S.rot==4?1:0;world.dirty=1;return}
  if(cur)return;
- world.set(x,y,{t,d:S.rot,s:0,on:0,val:0,lit:0});save()}
+ world.set(x,y,{t,d:S.rot%4,auto:t=='node'&&S.rot==4?1:0,s:0,on:0,val:0,lit:0});save()}
 function mkFrame(a,b){const M=maxF(),x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]),w=Math.abs(a[0]-b[0])+1,h=Math.abs(a[1]-b[1])+1;
  if(w>M||h>M)return msg('Frame limit is '+M+'×'+M+'. Certify more chips to grow it.');
  if(w*h<3)return msg('Frame too small');frames.push({x,y,w,h});save()}
@@ -141,22 +152,22 @@ cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);const[px,py]=pt(e);if(e.b
 cv.onpointermove=e=>{const[px,py,s]=pt(e);hov=cellAt(px,py);if(pan){cam.x=pan[2]+(e.clientX-pan[0])/s;cam.y=pan[3]+(e.clientY-pan[1])/s}else if(down&&(S.tool=='thread'||S.tool=='erase'))act(hov,0)};
 cv.onpointerup=()=>{if(pan){pan=null;return}down=0;if(fs&&S.tool=='frame'){mkFrame(fs,hov);fs=null}};
 cv.oncontextmenu=e=>e.preventDefault();
-const keys={};onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key=='r'||e.key=='R'){S.rot=(S.rot+1)%4;ui()}};onkeyup=e=>keys[e.key.toLowerCase()]=0;
+const keys={};onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key=='r'||e.key=='R'){S.rot=(S.rot+1)%5;ui()}};onkeyup=e=>keys[e.key.toLowerCase()]=0;
 const TL=[['hand','✋ Toggle'],['thread','Wire'],['key','Switch'],['node','NOT gate'],['lamp','Light'],['in','Input Pin'],['out','Output Pin'],['frame','Chip Frame'],['seal','Make Chip'],['erase','Erase']];
 function ui(){const b=document.getElementById('bar');b.innerHTML='';
  const add=(id,l)=>{const e=document.createElement('button');e.textContent=l;if(S.tool==id)e.className='on';e.onclick=()=>{S.tool=id;ui()};b.appendChild(e)};
- TL.forEach(([id,l])=>add(id,id=='node'?l+' '+'→↓←↑'[S.rot]:l));order.forEach(id=>{const D=LIB[id];add('c:'+id,D.name+' '+D.w+'×'+D.h)});const gb=document.createElement('button');gb.textContent='❓ Guide';gb.onclick=()=>guide(0);b.appendChild(gb);
+ TL.forEach(([id,l])=>add(id,id=='node'?l+' '+'→↓←↑A'[S.rot]:l));order.forEach(id=>{const D=LIB[id];add('c:'+id,D.name+' '+D.w+'×'+D.h)});const gb=document.createElement('button');gb.textContent='❓ Guide';gb.onclick=()=>guide(0);b.appendChild(gb);
  const k=done.findIndex(v=>!v),all=k<0,g=G[all?G.length-1:k];
  document.getElementById('hud').innerHTML=all?'<b>THE ENGINE WAKES</b> — every goal certified. Keep building: bigger machines, faster clocks, your own computer.':
-  '<b>'+g.e+'</b> · Goal '+(k+1)+'/'+G.length+': <b>'+g.n+'</b> ('+g.i+' in → '+g.o+' out) — '+g.h+'<br>Unlimited board and frame size · Press ❓ Guide for step-by-step examples · R turns a NOT gate · right-drag/WASD pans'}
+  '<b>'+g.e+'</b> · Goal '+(k+1)+'/'+G.length+': <b>'+g.n+'</b> ('+g.i+' in → '+g.o+' out) — '+g.h+'<br>Unlimited board and frame size · Press ❓ Guide for step-by-step examples · R cycles NOT gate direction (A = auto) · right-drag/WASD pans'}
 const exm=(cs,f)=>{cs.forEach(([x,y,t,d])=>world.set(x,y,{t,d:d||0,s:0,on:0,val:0,lit:0}));if(f&&!frames.some(q=>q.x==f[0]&&q.y==f[1]))frames.push({x:f[0],y:f[1],w:f[2],h:f[3]});S.tool='hand';cam={x:0,y:-40};save();ui();guide(-1)};
 const P=[
-{t:'Welcome: build a computer from tiny parts',x:'You start with a few simple parts. Build small circuits, turn each into a CHIP, then build bigger chips out of chips, until you have an adder and a counter (the heart of a computer).',d:'Switch      click it to turn on/off\nWire        carries power (glows yellow)\nNOT gate    flips the signal. Power goes in the BACK and out the\n            FRONT (little dot). Press R to turn it.\nLight       lit when power reaches it\nChip Frame  a box: whatever you build inside becomes ONE chip'},
+{t:'Welcome: build a computer from tiny parts',x:'You start with a few simple parts. Build small circuits, turn each into a CHIP, then build bigger chips out of chips, until you have an adder and a counter (the heart of a computer).',d:'Switch      click it to turn on/off\nWire        carries power (glows yellow)\nNOT gate    flips the signal. Power goes in the BACK and out the\n            FRONT (little dot). It turns itself to fit your wires.\n            Press R to force a direction (A = auto).\nLight       lit when power reaches it\nChip Frame  a box: whatever you build inside becomes ONE chip'},
 {t:'Example 1: a Switch turns on a Light',x:'Press Place, then click the Switch with ✋ Toggle. The wire turns yellow and the Light comes on.',d:'[Switch]--Wire--Wire--[Light]',b:()=>exm([[10,10,'key'],[11,10,'thread'],[12,10,'thread'],[13,10,'lamp']])},
 {t:'Example 2: the NOT gate flips things',x:'Place it, then click the Switch. Switch OFF makes the Light ON, and Switch ON makes the Light OFF.',d:'[Switch] -> [NOT] -> Wire -> [Light]\n  off        flips       ON',b:()=>exm([[10,13,'key'],[11,13,'node',0],[12,13,'thread'],[13,13,'lamp']])},
-{t:'Example 3: make your first chip (NOR gate)',x:'Place it. Click the orange Input Pins with ✋ Toggle and watch the blue Output Pin: it is ON only when BOTH inputs are OFF. Then pick Make Chip and click inside the gold box. Type a name (try NOR Gate). The chip shrinks to a tiny block (inputs on its left side, outputs on its right) and appears in the bottom bar; if it matches the current goal it is certified.',d:'Input 1 --+\n          Wire --[NOT]-- Wire -- Output\nInput 2 --+\n(wire both inputs together = OR, then NOT flips it = NOR)',b:()=>exm([[10,18,'in'],[11,18,'thread'],[12,18,'thread'],[12,19,'thread'],[10,20,'in'],[11,20,'thread'],[12,20,'thread'],[13,19,'node',0],[14,19,'thread'],[15,19,'out']],[10,18,6,3])},
-{t:'Example 4: use chips as parts, climb the goals',x:'Your chip is now a part. Click it in the bar and place it anywhere. Draw a new Chip Frame, put chips and wires inside, add Input and Output Pins on the edge, then Make Chip again. Pins are numbered top to bottom (Input 1, Input 2 ...). Controls: R turns a NOT gate, drag to paint wire, right-drag or WASD to pan.',d:'AND gate = NOR of two flipped inputs:\n\nA --[NOR (both inputs wired to A)]--+\n                                   [NOR]-- Out\nB --[NOR (both inputs wired to B)]--+\n\nGoals: NOR > AND > XOR > Half Adder > Full Adder\n       > Memory Latch > 4-bit Adder > Tally Core'}];
-function nameBox(def,cb){const d=document.getElementById('gd');d.style.display='flex';d.innerHTML='<div class=card><h3>Name your chip</h3><p>It becomes a tiny block: inputs on its left side, outputs on its right, and goes in your bottom bar.</p><input id=nm maxlength=20 style="font:inherit;padding:4px;width:100%;box-sizing:border-box"><div class=nv></div></div>';
+{t:'Example 3: make your first chip (NOR gate)',x:'Place it. Click the orange Input Pins with ✋ Toggle and watch the blue Output Pin: it is ON only when BOTH inputs are OFF. Then pick Make Chip and click inside the gold box. Type a name (try NOR Gate). The chip shrinks to a tiny block (inputs along the top edge, outputs along the bottom) and appears in the bottom bar; if it matches the current goal it is certified.',d:'Input 1 --+\n          Wire --[NOT]-- Wire -- Output\nInput 2 --+\n(wire both inputs together = OR, then NOT flips it = NOR)',b:()=>exm([[10,18,'in'],[11,18,'thread'],[12,18,'thread'],[12,19,'thread'],[10,20,'in'],[11,20,'thread'],[12,20,'thread'],[13,19,'node',0],[14,19,'thread'],[15,19,'out']],[10,18,6,3])},
+{t:'Example 4: use chips as parts, climb the goals',x:'Your chip is now a part. Click it in the bar and place it anywhere. Draw a new Chip Frame, put chips and wires inside, add Input and Output Pins on the edge, then Make Chip again. Pins are numbered top to bottom (Input 1, Input 2 ...). Controls: R cycles NOT gate direction (A = auto), drag to paint wire, right-drag or WASD to pan.',d:'AND gate = NOR of two flipped inputs:\n\nA --[NOR (both inputs wired to A)]--+\n                                   [NOR]-- Out\nB --[NOR (both inputs wired to B)]--+\n\nGoals: NOR > AND > XOR > Half Adder > Full Adder\n       > Memory Latch > 4-bit Adder > Tally Core'}];
+function nameBox(def,cb){const d=document.getElementById('gd');d.style.display='flex';d.innerHTML='<div class=card><h3>Name your chip</h3><p>It becomes a tiny block: inputs along its top edge, outputs along its bottom edge, and goes in your bottom bar.</p><input id=nm maxlength=20 style="font:inherit;padding:4px;width:100%;box-sizing:border-box"><div class=nv></div></div>';
  const i=d.querySelector('#nm');i.value=def;const go=()=>{const v=i.value.trim()||def;d.style.display='none';cb(v)};
  const nv=d.querySelector('.nv'),a=document.createElement('button'),c=document.createElement('button');a.textContent='Make chip';a.onclick=go;c.textContent='Cancel';c.onclick=()=>d.style.display='none';nv.append(a,c);
  i.onkeydown=e=>{if(e.key=='Enter')go();e.stopPropagation()};setTimeout(()=>{i.focus();i.select()},0)}
