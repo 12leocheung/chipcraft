@@ -1,85 +1,171 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Chipcraft</title>
-<link rel="stylesheet" href="style.css">
-<link rel="icon" href="assets/chip.png">
-<script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
-</script>
-</head>
-<body>
-<div id="view"></div>
-<div id="crosshair"></div>
-<img id="held" alt="">
-<div id="tag"></div>
-<div id="hotbar"></div>
-
-<div id="inventory">
-  <div class="inv-window">
-    <h2>Creative Inventory</h2>
-    <p class="hint">Click a slot to pick an item up, click another to swap it in.</p>
-    <div id="inv-grid"></div>
-    <div class="divider"></div>
-    <p class="hint">Hotbar</p>
-    <div id="inv-hotbar"></div>
-  </div>
-</div>
-
-<div id="chip-modal">
-  <div class="dialog">
-    <h2 id="chip-title">Save Chip</h2>
-    <input id="chip-name" type="text" placeholder="name this chip (optional)" autocomplete="off" spellcheck="false">
-    <div class="buttons">
-      <button id="chip-save" class="primary">Save to inventory</button>
-      <button id="chip-cancel">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<div id="toast"></div>
-<div id="lock-hint">Click to look around</div>
-<div id="help">
-  <b>WASD</b> move · <b>Space</b> jump · <b>mouse</b> look · <b>left click</b> break ·
-  <b>right click</b> use / place · <b>E</b> inventory · <b>K</b> save chip · <b>L</b> unpack chip ·
-  <b>1-9</b> / wheel slots
-</div>
-
-<div id="loading">
-  <div class="spinner"></div>
-  <p id="status">Loading the Python runtime…</p>
-</div>
-
-<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
-<script type="module">
-  import { createBridge } from './bridge.js';
-
-  const status = document.getElementById('status');
-  const loading = document.getElementById('loading');
-
-  function fail(message, error) {
-    console.error(error || message);
-    loading.classList.remove('done');
-    status.textContent = message;
-    loading.classList.add('error');
-  }
-
-  window.gameBridge = createBridge();
-
-  try {
-    status.textContent = 'Loading the Python runtime… (about 10 MB, cached after the first visit)';
-    const pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' });
-    window.pyodide = pyodide;
-    status.textContent = 'Starting the game…';
-    const response = await fetch('game.py', { cache: 'no-cache' });
-    if (!response.ok) throw new Error('Could not load game.py (' + response.status + ')');
-    const source = await response.text();
-    await pyodide.runPythonAsync(source);
-  } catch (error) {
-    fail('Could not start the game: ' + (error && error.message ? error.message : error), error);
-  }
-</script>
-</body>
-</html>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Substrate</title>
+<style>
+:root{--bg:#10121c;--pn:#1b1f33;--tx:#dfe6ff;--ac:#ffb454;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#10121c}}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
+#app{display:flex;flex-direction:column;height:100%}
+#hud{padding:5px 8px;background:var(--pn);border-bottom:1px solid #2c3354}
+#hud b{color:var(--ac)}
+canvas{flex:1;min-height:0;width:100%;object-fit:contain;image-rendering:pixelated;touch-action:none;background:#0b0d16}
+#msg{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:#000c;padding:4px 10px;border:1px solid var(--ac);border-radius:4px;display:none;max-width:90%}
+#gd{position:absolute;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:10px;z-index:5}#gd .card{background:var(--pn);border:1px solid var(--ac);border-radius:6px;padding:12px 14px;max-width:560px;max-height:100%;overflow:auto}#gd pre{background:#0b0d16;padding:8px;overflow-x:auto;margin:8px 0;font:inherit}#gd h3{margin:0 0 6px;color:var(--ac)}#gd .nv{display:flex;gap:6px;margin-top:8px}
+.bar{display:flex;gap:4px;padding:4px;background:var(--pn);flex-wrap:wrap}
+button{font:inherit;background:#262c4a;color:var(--tx);border:1px solid #3b4478;border-radius:3px;padding:4px 7px;cursor:pointer}
+button.on{background:var(--ac);color:#111;border-color:var(--ac)}
+</style></head><body><div id="app"><div id="hud"></div><canvas id="cv" width="480" height="270"></canvas><div id="msg"></div><div id="gd"></div><div class="bar" id="bar"></div></div>
+<script>
+const W=480,H=270,cv=document.getElementById('cv'),X=cv.getContext('2d'),DX=[1,0,-1,0],DY=[0,1,0,-1],N=32;
+const inb=(g,x,y)=>g.inf||(x>=0&&y>=0&&x<g.w&&y<g.h);
+const K=(x,y)=>(x+1e5)*2e5+(y+1e5),dec=k=>[Math.floor(k/2e5)-1e5,k%2e5-1e5];
+function serW(){const o=[];for(const[k,c]of world.m){const[x,y]=dec(k);if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,on:c.on,val:c.val})}return o}
+class Grid{
+ constructor(w,h,inf){this.w=w;this.h=h;this.inf=inf;this.m=new Map();this.dirty=1;this.nets=[]}
+ get(x,y){return this.m.get(K(x,y))||null}
+ set(x,y,v){if(v)this.m.set(K(x,y),v);else this.m.delete(K(x,y));this.dirty=1}
+ emit(x,y,d){const c=this.get(x,y);if(!c)return 0;
+  if(c.t=='key')return c.on?1:0;
+  if(c.t=='node')return c.s&&c.d==d?1:0;
+  if(c.t=='in')return c.val?1:0;
+  if(c.t=='fp'){const D=c.inst.def,pe=D.ext[c.lx+','+c.ly];if(pe&&pe.k=='out'&&(pe.a?(c.lx+DX[d]<0||c.ly+DY[d]<0||c.lx+DX[d]>=D.w||c.ly+DY[d]>=D.h):d==0))return c.inst.g.get(pe.ix,pe.iy).lit?1:0}
+  return 0}
+ sig(x,y,d){const nx=x+DX[d],ny=y+DY[d],n=this.get(nx,ny);if(!n)return 0;if(n.t=='thread')return n.net&&n.net.p?1:0;return this.emit(nx,ny,(d+2)%4)}
+ build(){const seen=new Set();this.nets=[];
+  for(const[k,c]of this.m){const[x,y]=dec(k);if(c.t!='thread'||seen.has(c))continue;
+   const net={p:0,s:[]},q=[[x,y]];seen.add(c);
+   while(q.length){const[a,b]=q.pop();this.get(a,b).net=net;
+    for(let d=0;d<4;d++){const n=this.get(a+DX[d],b+DY[d]);if(!n)continue;
+     if(n.t=='thread'){if(!seen.has(n)){seen.add(n);q.push([a+DX[d],b+DY[d]])}}else net.s.push([a+DX[d],b+DY[d],(d+2)%4])}}
+   this.nets.push(net)}
+  this.dirty=0}
+ step(){if(this.dirty)this.build();
+  for(const n of this.nets)n.p=n.s.some(([x,y,d])=>this.emit(x,y,d))?1:0;
+  const up=[],ch=new Set();
+  for(const[k,c]of this.m){const[x,y]=dec(k);
+   if(c.t=='node'){const v=this.sig(x,y,(c.d+2)%4)?0:1;up.push(()=>c.s=v)}
+   else if(c.t=='lamp'||c.t=='out'){let v=0;for(let d=0;d<4;d++)v|=this.sig(x,y,d);up.push(()=>c.lit=v)}
+   else if(c.t=='fp'){ch.add(c.inst);const D=c.inst.def,pe=D.ext[c.lx+','+c.ly],k=pe&&pe.k=='in'?c.inst.g.get(pe.ix,pe.iy):null;
+    if(k){let v=0;for(let d=0;d<4;d++)if(pe.a?(c.lx+DX[d]<0||c.ly+DY[d]<0||c.lx+DX[d]>=D.w||c.ly+DY[d]>=D.h):d==2)v|=this.sig(x,y,d);up.push(()=>k.val=v)}}}
+  up.forEach(f=>f());ch.forEach(i=>i.g.step())}
+}
+let LIB={},order=[],S={tool:'hand',rot:0},cam={x:0,y:-40},world=new Grid(0,0,1),frames=[],done=Array(8).fill(0),cn=1,hov=[0,0],fs=null,msgT;
+const fill=(g,cells)=>{for(const e of cells){if(e.chip)put(g,e.x,e.y,e.chip);else g.set(e.x,e.y,{t:e.t,d:e.d||0,s:0,on:e.on||0,val:e.val||0,lit:0})}return g};
+const inst=D=>fill(new Grid(D.iw||D.w,D.ih||D.h),D.cells);
+function put(g,x,y,id){const D=LIB[id],i={def:D,x,y,g:inst(D)};for(let ly=0;ly<D.h;ly++)for(let lx=0;lx<D.w;lx++)g.set(x+lx,y+ly,{t:'fp',inst:i,lx,ly})}
+function serR(g,x0,y0,w,h){const o=[];for(let y=0;y<h;y++)for(let x=0;x<w;x++){const c=g.get(x0+x,y0+y);if(!c)continue;
+ if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,on:c.on,val:c.val})}return o}
+const ports=(cells,t)=>cells.filter(e=>e.t==t).sort((a,b)=>a.y-b.y||a.x-b.x);
+const comb=(n,f)=>()=>{const T=1<<n,idx=T<=64?[...Array(T).keys()]:Array.from({length:40},(_,i)=>(i*97+13)%T);
+ return idx.map(v=>{const b=[...Array(n)].map((_,i)=>v>>i&1);return[b,f(b)]})};
+const G=[
+{n:'NOR Gate',e:'Spark Age',i:2,o:1,h:'Output 1 only when BOTH inputs are 0. Join the two inputs on one Wire, then feed a NOT gate (see ❓ Guide, Example 3).',s:comb(2,b=>[+!(b[0]|b[1])])},
+{n:'AND Gate',e:'Gate Age',i:2,o:1,h:'Flip each input with a NOR chip, then NOR the results together.',s:comb(2,b=>[b[0]&b[1]])},
+{n:'XOR Gate',e:'Gate Age',i:2,o:1,h:'Output 1 when the inputs differ.',s:comb(2,b=>[b[0]^b[1]])},
+{n:'Half Adder',e:'Logic Age',i:2,o:2,h:'Out 1 = sum, Out 2 = carry.',s:comb(2,b=>[b[0]^b[1],b[0]&b[1]])},
+{n:'Full Adder',e:'Logic Age',i:3,o:2,h:'Add 3 bits. Out 1 = sum, Out 2 = carry.',s:comb(3,b=>{const t=b[0]+b[1]+b[2];return[t&1,t>>1]})},
+{n:'Memory Latch',e:'Memory Age',i:2,o:1,h:'In 1 = Set, In 2 = Reset. Out remembers. Cross-couple two NOR chips.',s:()=>[[[1,0],[1]],[[0,0],[1]],[[0,1],[0]],[[0,0],[0]],[[1,0],[1]],[[0,0],[1]]]},
+{n:'4-bit Adder',e:'Engine Age',i:8,o:5,h:'In 1-4 = A (low→high), In 5-8 = B. Out 1-4 = sum, Out 5 = carry.',s:comb(8,b=>{const t=(b[0]+2*b[1]+4*b[2]+8*b[3])+(b[4]+2*b[5]+4*b[6]+8*b[7]);return[t&1,t>>1&1,t>>2&1,t>>3&1,t>>4&1]})},
+{n:'Tally Core',e:'Engine Age',i:1,o:2,rel:1,h:'Count pulses: Out 1 + 2×Out 2 must go up by one per pulse, wrapping 3→0.'}];
+const maxF=()=>1e9;
+function test(D,gl){const g=inst(D),pi=ports(D.cells,'in').map(p=>g.get(p.x,p.y)),po=ports(D.cells,'out').map(p=>g.get(p.x,p.y));
+ const run=b=>{b.forEach((v,i)=>pi[i].val=v);for(let i=0;i<70;i++)g.step();return po.map(o=>o.lit)};
+ if(gl.rel){let r=run([0]),c0=r[0]+2*r[1];for(let k=1;k<=8;k++){r=run([1]);const c=r[0]+2*r[1];if(c!=(c0+k)%4)return 0;r=run([0]);if(r[0]+2*r[1]!=c)return 0}return 1}
+ for(const[b,o]of gl.s()){const r=run(b);if(o.some((v,i)=>v!=r[i]))return 0}return 1}
+function msg(t){const m=document.getElementById('msg');m.textContent=t;m.style.display='block';clearTimeout(msgT);msgT=setTimeout(()=>m.style.display='none',3800);return 0}
+function doSeal(f){let ni=0,no=0;
+ for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++){const c=world.get(x,y);if(!c)continue;
+  if(c.t=='fp'){const i=c.inst;if(i.x<f.x||i.y<f.y||i.x+i.def.w>f.x+f.w||i.y+i.def.h>f.y+f.h)return msg('A chip sticks out of the frame')}
+  else if(c.t=='in'||c.t=='out'){c.t=='in'?ni++:no++}}
+ if(!ni||!no)return msg('Need at least one Input Pin and one Output Pin');
+ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+ for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++)if(world.get(x,y)){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y)}
+ const bw=x1-x0+1,bh=y1-y0+1;
+ for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++){const c=world.get(x,y);if(c&&(c.t=='in'||c.t=='out')&&0)return 0}
+ return nameBox('Chip '+cn,name=>{let cert=0;const cells=serR(world,x0,y0,bw,bh);
+ for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++)world.set(x,y,null);
+ frames=frames.filter(q=>q!==f);
+ const D={id:'c'+cn,name:name,w:2,h:Math.max(ni,no),iw:bw,ih:bh,ext:{},cells,nIn:ni,nOut:no,hue:(cn*47)%360,pn:{}};cn++;
+ ports(cells,'in').forEach((p,i)=>D.ext['0,'+i]={k:'in',ix:p.x,iy:p.y,n:i+1});ports(cells,'out').forEach((p,i)=>D.ext['1,'+i]={k:'out',ix:p.x,iy:p.y,n:i+1});
+ LIB[D.id]=D;order.push(D.id);
+ for(let k=0;k<G.length;k++){if(done[k]||G[k].i!=ni||G[k].o!=no)continue;
+  if(test(D,G[k])){done[k]=1;cert=1;msg('✔ '+G[k].n+' certified!'+(done.every(Boolean)?' — THE ENGINE WAKES. Sandbox is yours.':''));break}}
+ if(!cert)msg(D.name+' made: '+D.w+'×'+D.h+', '+ni+' in → '+no+' out. It is in your bottom bar.');
+ S.tool='c:'+D.id;ui();save()})}
+function act(c,first){const[x,y]=c;if(!inb(world,x,y))return;const t=S.tool,cur=world.get(x,y);
+ if(t=='hand'){if(cur&&cur.t=='key')cur.on^=1;else if(cur&&cur.t=='in')cur.val^=1;return}
+ if(t=='erase'){if(cur){if(cur.t=='fp'){const i=cur.inst;for(let a=0;a<i.def.h;a++)for(let b=0;b<i.def.w;b++)world.set(i.x+b,i.y+a,null)}else world.set(x,y,null)}
+  else if(first)frames=frames.filter(f=>!(x>=f.x&&y>=f.y&&x<f.x+f.w&&y<f.y+f.h));save();return}
+ if(t=='seal'){const f=frames.find(f=>x>=f.x&&y>=f.y&&x<f.x+f.w&&y<f.y+f.h);if(f)doSeal(f);else msg('Click inside a Chip Frame');return}
+ if(t[0]=='c'&&t[1]==':'){const D=LIB[t.slice(2)];for(let a=0;a<D.h;a++)for(let b=0;b<D.w;b++)if(!inb(world,x+b,y+a)||world.get(x+b,y+a))return msg('No room here');put(world,x,y,D.id);save();return}
+ if(t=='node'&&cur&&cur.t=='node'){cur.d=S.rot;return}
+ if(cur)return;
+ world.set(x,y,{t,d:S.rot,s:0,on:0,val:0,lit:0});save()}
+function mkFrame(a,b){const M=maxF(),x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]),w=Math.abs(a[0]-b[0])+1,h=Math.abs(a[1]-b[1])+1;
+ if(w>M||h>M)return msg('Frame limit is '+M+'×'+M+'. Certify more chips to grow it.');
+ if(w*h<3)return msg('Frame too small');frames.push({x,y,w,h});save()}
+function save(){try{localStorage.setItem('substrate1',JSON.stringify({LIB,order,done,cn,frames,w:serW()}))}catch(e){}}
+function load(){try{const j=JSON.parse(localStorage.getItem('substrate1'));if(!j)return;LIB=j.LIB;for(const id in LIB){const D=LIB[id];if(!D.ext){D.iw=D.w;D.ih=D.h;D.ext={};for(const e of D.cells)if(e.t=='in'||e.t=='out')D.ext[e.x+','+e.y]={k:e.t,ix:e.x,iy:e.y,n:(D.pn||{})[e.x+','+e.y],a:1}}}order=j.order;done=j.done;cn=j.cn;frames=j.frames;fill(world,j.w)}catch(e){}}
+/* ---------- rendering ---------- */
+const gc=document.createElement('canvas');gc.width=520;gc.height=272;const GX=gc.getContext('2d');
+function dia(c,x,y,col,e0){c.fillStyle=col;for(let dx=-8;dx<8;dx++){const e=Math.round(4-Math.abs(dx+.5)/2);if(e>0)c.fillRect(x+dx,y-e,1,e*2)}}
+for(let y=0;y<N;y++)for(let x=0;x<N;x++)dia(GX,260+(x-y)*8,8+(x+y)*4,(x+y)&1?'#1a1f36':'#1e2440');
+function box(x,y,h,t,l,r){for(let dx=-8;dx<8;dx++){const e=Math.round(4-Math.abs(dx+.5)/2);if(e<=0)continue;X.fillStyle=dx<0?l:r;X.fillRect(x+dx,y-h+e,1,h);X.fillStyle=t;X.fillRect(x+dx,y-h-e,1,e*2)}}
+const DG=['111101101101111','010110010010111','111001111100111','111001111001111','101101111001001','111100111001111','111100111101111','111001001001001','111101111101111','111101111001111'];
+function num(n,x,y){X.fillStyle='#111';[...String(n)].forEach((ch,k)=>{const s=DG[+ch];for(let i=0;i<15;i++)if(s[i]=='1')X.fillRect(x+k*4+i%3,y+(i/3|0),1,1)})}
+function drawCell(c,x,y,pn){const hsl=(h,l)=>`hsl(${h},45%,${l}%)`;
+ switch(c.t){
+ case'thread':{const on=c.net&&c.net.p;box(x,y,1,on?'#ffd45a':'#3b4a86',on?'#c9992f':'#2a3566',on?'#a87a22':'#222b52');break}
+ case'key':box(x,y,4,'#7b7f98','#5a5e78','#454862');X.fillStyle=c.on?'#5dff9c':'#d8506b';X.fillRect(x-1,y-7,3,3);break;
+ case'node':{box(x,y,3,'#9b5de5','#6d3fb0','#4f2d85');const o=[[4,2],[-4,2],[-4,-2],[4,-2]][c.d];X.fillStyle=c.s?'#fff27a':'#2b1850';X.fillRect(x+o[0]-1,y-4+o[1],3,2);break}
+ case'lamp':box(x,y,4,c.lit?'#fff7a8':'#555',c.lit?'#e0b64a':'#3a3a3a',c.lit?'#b88d2c':'#2a2a2a');break;
+ case'in':box(x,y,2,c.val?'#ffe08a':'#ff9f43','#c27320','#8f5410');if(pn)num(pn,x-1,y-5);break;
+ case'out':box(x,y,2,c.lit?'#b8f6ff':'#2ec4e6','#1b8fa8','#136a7e');if(pn)num(pn,x-1,y-5);break;
+ case'fp':{const D=c.inst.def,pe=D.ext[c.lx+','+c.ly],k=pe?c.inst.g.get(pe.ix,pe.iy):null;
+  if(k&&k.t=='in'){box(x,y,6,k.val?'#ffe08a':'#ff9f43','#c27320','#8f5410');num(pe.n,x-1,y-9)}
+  else if(k&&k.t=='out'){box(x,y,6,k.lit?'#b8f6ff':'#2ec4e6','#1b8fa8','#136a7e');num(pe.n,x-1,y-9)}
+  else box(x,y,6,hsl(D.hue,55),hsl(D.hue,38),hsl(D.hue,28))}}}
+function draw(){X.fillStyle='#0b0d16';X.fillRect(0,0,W,H);const ox=W/2+cam.x,oy=40+cam.y;
+ const pm={};for(const f of frames){const ins=[],outs=[];for(let y=f.y;y<f.y+f.h;y++)for(let x=f.x;x<f.x+f.w;x++){const c=world.get(x,y);if(c&&c.t=='in')ins.push(x+','+y);if(c&&c.t=='out')outs.push(x+','+y)}ins.forEach((k,i)=>pm[k]=i+1);outs.forEach((k,i)=>pm[k]=i+1)}
+ const ch=S.tool[1]==':'?LIB[S.tool.slice(2)]:null;
+ const cs=[cellAt(0,0),cellAt(W,0),cellAt(0,H),cellAt(W,H)],mnx=Math.min(...cs.map(c=>c[0]))-3,mxx=Math.max(...cs.map(c=>c[0]))+3,mny=Math.min(...cs.map(c=>c[1]))-3,mxy=Math.max(...cs.map(c=>c[1]))+3;
+ for(let s=mnx+mny;s<=mxx+mxy;s++)for(let x=Math.max(mnx,s-mxy);x<=Math.min(mxx,s-mny);x++){const y=s-x,px=ox+(x-y)*8,py=oy+(x+y)*4;dia(X,px,py,(x+y)&1?'#1a1f36':'#1e2440');
+  for(const f of frames)if(x>=f.x&&y>=f.y&&x<f.x+f.w&&y<f.y+f.h)dia(X,px,py,(x==f.x||y==f.y||x==f.x+f.w-1||y==f.y+f.h-1)?'#c8903a':'#3a3050');
+  if(fs&&S.tool=='frame'&&x>=Math.min(fs[0],hov[0])&&x<=Math.max(fs[0],hov[0])&&y>=Math.min(fs[1],hov[1])&&y<=Math.max(fs[1],hov[1]))dia(X,px,py,'#ffb45488');
+  const c=world.get(x,y);if(c)drawCell(c,px,py,pm[x+','+y]);
+  if(x==hov[0]&&y==hov[1]){dia(X,px,py,'#ffffff30');}
+  if(ch&&x>=hov[0]&&y>=hov[1]&&x<hov[0]+ch.w&&y<hov[1]+ch.h&&!c){X.globalAlpha=.5;box(px,py,6,'hsl('+ch.hue+',55%,55%)','hsl('+ch.hue+',38%,38%)','hsl('+ch.hue+',38%,28%)');X.globalAlpha=1}}}
+const cellAt=(px,py)=>{const a=(px-W/2-cam.x)/8,b=(py-40-cam.y)/4;return[Math.round((a+b)/2),Math.round((b-a)/2)]};
+const pt=e=>{const r=cv.getBoundingClientRect(),s=Math.min(r.width/W,r.height/H);return[(e.clientX-r.left-(r.width-W*s)/2)/s,(e.clientY-r.top-(r.height-H*s)/2)/s,s]};
+let down=0,pan=null;
+cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);const[px,py]=pt(e);if(e.button==2||e.button==1||e.shiftKey){pan=[e.clientX,e.clientY,cam.x,cam.y];return}
+ down=1;const c=cellAt(px,py);hov=c;if(S.tool=='frame')fs=c;else act(c,1)};
+cv.onpointermove=e=>{const[px,py,s]=pt(e);hov=cellAt(px,py);if(pan){cam.x=pan[2]+(e.clientX-pan[0])/s;cam.y=pan[3]+(e.clientY-pan[1])/s}else if(down&&(S.tool=='thread'||S.tool=='erase'))act(hov,0)};
+cv.onpointerup=()=>{if(pan){pan=null;return}down=0;if(fs&&S.tool=='frame'){mkFrame(fs,hov);fs=null}};
+cv.oncontextmenu=e=>e.preventDefault();
+const keys={};onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key=='r'||e.key=='R'){S.rot=(S.rot+1)%4;ui()}};onkeyup=e=>keys[e.key.toLowerCase()]=0;
+const TL=[['hand','✋ Toggle'],['thread','Wire'],['key','Switch'],['node','NOT gate'],['lamp','Light'],['in','Input Pin'],['out','Output Pin'],['frame','Chip Frame'],['seal','Make Chip'],['erase','Erase']];
+function ui(){const b=document.getElementById('bar');b.innerHTML='';
+ const add=(id,l)=>{const e=document.createElement('button');e.textContent=l;if(S.tool==id)e.className='on';e.onclick=()=>{S.tool=id;ui()};b.appendChild(e)};
+ TL.forEach(([id,l])=>add(id,id=='node'?l+' '+'→↓←↑'[S.rot]:l));order.forEach(id=>{const D=LIB[id];add('c:'+id,D.name+' '+D.w+'×'+D.h)});const gb=document.createElement('button');gb.textContent='❓ Guide';gb.onclick=()=>guide(0);b.appendChild(gb);
+ const k=done.findIndex(v=>!v),all=k<0,g=G[all?G.length-1:k];
+ document.getElementById('hud').innerHTML=all?'<b>THE ENGINE WAKES</b> — every goal certified. Keep building: bigger machines, faster clocks, your own computer.':
+  '<b>'+g.e+'</b> · Goal '+(k+1)+'/'+G.length+': <b>'+g.n+'</b> ('+g.i+' in → '+g.o+' out) — '+g.h+'<br>Unlimited board and frame size · Press ❓ Guide for step-by-step examples · R turns a NOT gate · right-drag/WASD pans'}
+const exm=(cs,f)=>{cs.forEach(([x,y,t,d])=>world.set(x,y,{t,d:d||0,s:0,on:0,val:0,lit:0}));if(f&&!frames.some(q=>q.x==f[0]&&q.y==f[1]))frames.push({x:f[0],y:f[1],w:f[2],h:f[3]});S.tool='hand';cam={x:0,y:-40};save();ui();guide(-1)};
+const P=[
+{t:'Welcome: build a computer from tiny parts',x:'You start with a few simple parts. Build small circuits, turn each into a CHIP, then build bigger chips out of chips, until you have an adder and a counter (the heart of a computer).',d:'Switch      click it to turn on/off\nWire        carries power (glows yellow)\nNOT gate    flips the signal. Power goes in the BACK and out the\n            FRONT (little dot). Press R to turn it.\nLight       lit when power reaches it\nChip Frame  a box: whatever you build inside becomes ONE chip'},
+{t:'Example 1: a Switch turns on a Light',x:'Press Place, then click the Switch with ✋ Toggle. The wire turns yellow and the Light comes on.',d:'[Switch]--Wire--Wire--[Light]',b:()=>exm([[10,10,'key'],[11,10,'thread'],[12,10,'thread'],[13,10,'lamp']])},
+{t:'Example 2: the NOT gate flips things',x:'Place it, then click the Switch. Switch OFF makes the Light ON, and Switch ON makes the Light OFF.',d:'[Switch] -> [NOT] -> Wire -> [Light]\n  off        flips       ON',b:()=>exm([[10,13,'key'],[11,13,'node',0],[12,13,'thread'],[13,13,'lamp']])},
+{t:'Example 3: make your first chip (NOR gate)',x:'Place it. Click the orange Input Pins with ✋ Toggle and watch the blue Output Pin: it is ON only when BOTH inputs are OFF. Then pick Make Chip and click inside the gold box. Type a name (try NOR Gate). The chip shrinks to a tiny block (inputs on its left side, outputs on its right) and appears in the bottom bar; if it matches the current goal it is certified.',d:'Input 1 --+\n          Wire --[NOT]-- Wire -- Output\nInput 2 --+\n(wire both inputs together = OR, then NOT flips it = NOR)',b:()=>exm([[10,18,'in'],[11,18,'thread'],[12,18,'thread'],[12,19,'thread'],[10,20,'in'],[11,20,'thread'],[12,20,'thread'],[13,19,'node',0],[14,19,'thread'],[15,19,'out']],[10,18,6,3])},
+{t:'Example 4: use chips as parts, climb the goals',x:'Your chip is now a part. Click it in the bar and place it anywhere. Draw a new Chip Frame, put chips and wires inside, add Input and Output Pins on the edge, then Make Chip again. Pins are numbered top to bottom (Input 1, Input 2 ...). Controls: R turns a NOT gate, drag to paint wire, right-drag or WASD to pan.',d:'AND gate = NOR of two flipped inputs:\n\nA --[NOR (both inputs wired to A)]--+\n                                   [NOR]-- Out\nB --[NOR (both inputs wired to B)]--+\n\nGoals: NOR > AND > XOR > Half Adder > Full Adder\n       > Memory Latch > 4-bit Adder > Tally Core'}];
+function nameBox(def,cb){const d=document.getElementById('gd');d.style.display='flex';d.innerHTML='<div class=card><h3>Name your chip</h3><p>It becomes a tiny block: inputs on its left side, outputs on its right, and goes in your bottom bar.</p><input id=nm maxlength=20 style="font:inherit;padding:4px;width:100%;box-sizing:border-box"><div class=nv></div></div>';
+ const i=d.querySelector('#nm');i.value=def;const go=()=>{const v=i.value.trim()||def;d.style.display='none';cb(v)};
+ const nv=d.querySelector('.nv'),a=document.createElement('button'),c=document.createElement('button');a.textContent='Make chip';a.onclick=go;c.textContent='Cancel';c.onclick=()=>d.style.display='none';nv.append(a,c);
+ i.onkeydown=e=>{if(e.key=='Enter')go();e.stopPropagation()};setTimeout(()=>{i.focus();i.select()},0)}
+function guide(p){const d=document.getElementById('gd');if(p<0||p>=P.length){d.style.display='none';return}const e=P[p];d.style.display='flex';
+ d.innerHTML='<div class=card><h3>'+e.t+' ('+(p+1)+'/'+P.length+')</h3><p>'+e.x+'</p><pre></pre><div class=nv></div></div>';
+ d.querySelector('pre').textContent=e.d;const nv=d.querySelector('.nv'),mk=(l,f)=>{const b=document.createElement('button');b.textContent=l;b.onclick=f;nv.appendChild(b)};
+ if(e.b)mk('▶ Place this example',e.b);if(p>0)mk('◀ Back',()=>guide(p-1));if(p<P.length-1)mk('Next ▶',()=>guide(p+1));mk('Close',()=>guide(-1))}
+load();ui();try{if(!localStorage.getItem('substrate_seen')){localStorage.setItem('substrate_seen',1);guide(0)}}catch(e){guide(0)}let acc=0,last=performance.now();
+(function loop(t){acc+=t-last;last=t;let n=0;while(acc>50&&n++<4){world.step();acc-=50}if(acc>200)acc=0;
+ const sp=2;if(keys.w||keys.arrowup)cam.y+=sp;if(keys.s||keys.arrowdown)cam.y-=sp;if(keys.a||keys.arrowleft)cam.x+=sp;if(keys.d||keys.arrowright)cam.x-=sp;
+ draw();requestAnimationFrame(loop)})(last);
+</script></body></html>
