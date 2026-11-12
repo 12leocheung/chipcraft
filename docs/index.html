@@ -11,10 +11,11 @@ canvas{flex:1;min-height:0;width:100%;object-fit:contain;image-rendering:pixelat
 #gd{position:absolute;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:10px;z-index:5}#gd .card{background:var(--pn);border:1px solid var(--ac);border-radius:6px;padding:12px 14px;max-width:560px;max-height:100%;overflow:auto}#gd pre{background:#0b0d16;padding:8px;overflow-x:auto;margin:8px 0;font:inherit}#gd h3{margin:0 0 6px;color:var(--ac)}#gd .nv{display:flex;gap:6px;margin-top:8px}
 .bar{display:flex;gap:4px;padding:4px;background:var(--pn);flex-wrap:wrap}
 button{font:inherit;background:#262c4a;color:var(--tx);border:1px solid #3b4478;border-radius:3px;padding:4px 7px;cursor:pointer}
+.grp{display:inline-flex}.grp button:first-child{border-radius:3px 0 0 3px}.grp button:last-child{border-radius:0 3px 3px 0;border-left:0;color:#ff9a9a}.grp:hover{outline:1px solid var(--ac);border-radius:3px}
 button.on{background:var(--ac);color:#111;border-color:var(--ac)}
 </style></head><body><div id="app"><div id="hud"></div><canvas id="cv" width="480" height="270"></canvas><div id="msg"></div><div id="gd"></div><div class="bar" id="bar"></div></div>
 <script>
-const W=480,H=270,cv=document.getElementById('cv'),X=cv.getContext('2d'),DX=[1,0,-1,0],DY=[0,1,0,-1],N=32;
+let W=480,H=270;const cv=document.getElementById('cv'),X=cv.getContext('2d'),DX=[1,0,-1,0],DY=[0,1,0,-1],N=32;
 const inb=(g,x,y)=>g.inf||(x>=0&&y>=0&&x<g.w&&y<g.h);
 const K=(x,y)=>(x+1e5)*2e5+(y+1e5),dec=k=>[Math.floor(k/2e5)-1e5,k%2e5-1e5];
 function serW(){const o=[];for(const[k,c]of world.m){const[x,y]=dec(k);if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,auto:c.auto,on:c.on,val:c.val})}return o}
@@ -58,8 +59,8 @@ class Grid{
     if(k){let v=0;for(let d=0;d<4;d++)if(pe.a?(c.lx+DX[d]<0||c.ly+DY[d]<0||c.lx+DX[d]>=D.w||c.ly+DY[d]>=D.h):(pe.s?d==3:d==2))v|=this.sig(x,y,d);up.push(()=>k.val=v)}}}
   up.forEach(f=>f());ch.forEach(i=>i.g.step())}
 }
-let LIB={},order=[],S={tool:'hand',rot:4},cam={x:0,y:-40},world=new Grid(0,0,1),frames=[],done=Array(8).fill(0),cn=1,hov=[0,0],fs=null,msgT;
-const fill=(g,cells)=>{for(const e of cells){if(e.chip)put(g,e.x,e.y,e.chip);else g.set(e.x,e.y,{t:e.t,d:e.d||0,auto:e.auto||0,s:0,on:e.on||0,val:e.val||0,lit:0})}return g};
+let LIB={},order=[],S={tool:'hand',rot:0},cam={x:0,y:-40},world=new Grid(0,0,1),frames=[],done=Array(8).fill(0),cn=1,hov=[0,0],fs=null,msgT;
+const fill=(g,cells)=>{for(const e of cells){if(e.chip)put(g,e.x,e.y,e.chip);else g.set(e.x,e.y,{t:e.t,d:e.d||0,auto:0,s:0,on:e.on||0,val:e.val||0,lit:0})}return g};
 const inst=D=>fill(new Grid(D.iw||D.w,D.ih||D.h),D.cells);
 function put(g,x,y,id){const D=LIB[id],i={def:D,x,y,g:inst(D)};for(let ly=0;ly<D.h;ly++)for(let lx=0;lx<D.w;lx++)g.set(x+lx,y+ly,{t:'fp',inst:i,lx,ly})}
 function serR(g,x0,y0,w,h){const o=[];for(let y=0;y<h;y++)for(let x=0;x<w;x++){const c=g.get(x0+x,y0+y);if(!c)continue;
@@ -102,6 +103,7 @@ function doSeal(f){let ni=0,no=0;
  if(!cert)msg(D.name+' made: '+D.w+'×'+D.h+', '+ni+' in → '+no+' out. It is in your bottom bar.');
  S.tool='c:'+D.id;ui();save()})}
 function act(c,first){const[x,y]=c;if(!inb(world,x,y))return;const t=S.tool,cur=world.get(x,y);
+ if(t=='rot'){if(cur&&cur.t=='node'){cur.d=(cur.d+1)%4;save()}return}
  if(t=='hand'){if(cur&&cur.t=='key')cur.on^=1;else if(cur&&cur.t=='in')cur.val^=1;return}
  if(t=='erase'){if(cur){if(cur.t=='fp'){const i=cur.inst;for(let a=0;a<i.def.h;a++)for(let b=0;b<i.def.w;b++)world.set(i.x+b,i.y+a,null)}else world.set(x,y,null)}
   else if(first)frames=frames.filter(f=>!(x>=f.x&&y>=f.y&&x<f.x+f.w&&y<f.y+f.h));save();return}
@@ -143,30 +145,62 @@ function draw(){X.fillStyle='#0b0d16';X.fillRect(0,0,W,H);const ox=Math.round(W/
   if(fs&&S.tool=='frame'&&x>=Math.min(fs[0],hov[0])&&x<=Math.max(fs[0],hov[0])&&y>=Math.min(fs[1],hov[1])&&y<=Math.max(fs[1],hov[1]))dia(X,px,py,'#ffb45488');
   const c=world.get(x,y);if(c)drawCell(c,px,py,pm[x+','+y]);
   if(x==hov[0]&&y==hov[1]){dia(X,px,py,'#ffffff30');}
-  if(ch&&x>=hov[0]&&y>=hov[1]&&x<hov[0]+ch.w&&y<hov[1]+ch.h&&!c){X.globalAlpha=.5;box(px,py,6,'hsl('+ch.hue+',55%,55%)','hsl('+ch.hue+',38%,38%)','hsl('+ch.hue+',38%,28%)');X.globalAlpha=1}}}
+  if(ch&&x>=hov[0]&&y>=hov[1]&&x<hov[0]+ch.w&&y<hov[1]+ch.h&&!c){X.globalAlpha=.5;box(px,py,6,'hsl('+ch.hue+',55%,55%)','hsl('+ch.hue+',38%,38%)','hsl('+ch.hue+',38%,28%)');X.globalAlpha=1}}
+ ghostDraw(ox,oy);selDraw2(ox,oy)}
 const cellAt=(px,py)=>{const a=(px-W/2-cam.x)/8,b=(py-40-cam.y)/4;return[Math.round((a+b)/2),Math.round((b-a)/2)]};
 const pt=e=>{const r=cv.getBoundingClientRect(),s=Math.min(r.width/W,r.height/H);return[(e.clientX-r.left-(r.width-W*s)/2)/s,(e.clientY-r.top-(r.height-H*s)/2)/s,s]};
 let down=0,pan=null;
 cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);const[px,py]=pt(e);if(e.button==2||e.button==1||e.shiftKey){pan=[e.clientX,e.clientY,cam.x,cam.y];return}
- down=1;const c=cellAt(px,py);hov=c;if(S.tool=='frame')fs=c;else act(c,1)};
-cv.onpointermove=e=>{const[px,py,s]=pt(e);hov=cellAt(px,py);if(pan){cam.x=pan[2]+(e.clientX-pan[0])/s;cam.y=pan[3]+(e.clientY-pan[1])/s}else if(down&&(S.tool=='thread'||S.tool=='erase'))act(hov,0)};
-cv.onpointerup=()=>{if(pan){pan=null;return}down=0;if(fs&&S.tool=='frame'){mkFrame(fs,hov);fs=null}};
+ down=1;const c=pick(px,py);hov=c;if(S.tool=='frame')fs=c;else if(S.tool=='hand'){const it=world.get(c[0],c[1]);setSel(c);if(it)mv={o:c,it,moved:0}}else{if(S.tool=='rot')setSel(c);act(c,1)}};
+cv.onpointermove=e=>{const[px,py,s]=pt(e);hov=mv&&mv.moved?cellAt(px,py):pick(px,py);if(mv&&!mv.moved&&(hov[0]!=mv.o[0]||hov[1]!=mv.o[1]))beginMove();if(pan){cam.x=pan[2]+(e.clientX-pan[0])/s;cam.y=pan[3]+(e.clientY-pan[1])/s}else if(down&&(S.tool=='thread'||S.tool=='erase'))act(hov,0)};
+cv.onpointerup=()=>{if(pan){pan=null;return}down=0;if(mv){endMove();mv=null}if(fs&&S.tool=='frame'){mkFrame(fs,hov);fs=null}};
 cv.oncontextmenu=e=>e.preventDefault();
-const keys={};onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key=='r'||e.key=='R'){S.rot=(S.rot+1)%5;ui()}};onkeyup=e=>keys[e.key.toLowerCase()]=0;
-const TL=[['hand','✋ Toggle'],['thread','Wire'],['key','Switch'],['node','NOT gate'],['lamp','Light'],['in','Input Pin'],['out','Output Pin'],['frame','Chip Frame'],['seal','Make Chip'],['erase','Erase']];
+let zi=2,lz=0;const ZS=[.7,.85,1,1.5,2,3,4];
+cv.onwheel=e=>{e.preventDefault();if(Date.now()-lz<90)return;const nz=Math.max(0,Math.min(ZS.length-1,zi+(e.deltaY<0?1:-1)));if(nz==zi)return;lz=Date.now();
+ const[px,py]=pt(e),ow=W,oh=H,wx=px-W/2-cam.x,wy=py-40-cam.y;zi=nz;W=Math.round(480/ZS[zi]);H=Math.round(270/ZS[zi]);cv.width=W;cv.height=H;cam.x=px*W/ow-W/2-wx;cam.y=py*H/oh-40-wy};
+const keys={};onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key=='r'||e.key=='R'){const c=world.get(hov[0],hov[1]);if(c&&c.t=='node')c.d=(c.d+1)%4;else{S.rot=(S.rot+1)%4;ui()}}};onkeyup=e=>keys[e.key.toLowerCase()]=0;
+const TL=[['hand','✋ Toggle/Move'],['thread','Wire'],['key','Switch'],['node','NOT gate'],['rot','↻ Rotate'],['lamp','Light'],['in','Input Pin'],['out','Output Pin'],['frame','Chip Frame'],['seal','Make Chip'],['erase','Erase']];
 function ui(){const b=document.getElementById('bar');b.innerHTML='';
- const add=(id,l)=>{const e=document.createElement('button');e.textContent=l;if(S.tool==id)e.className='on';e.onclick=()=>{S.tool=id;ui()};b.appendChild(e)};
- TL.forEach(([id,l])=>add(id,id=='node'?l+' '+'→↓←↑A'[S.rot]:l));order.forEach(id=>{const D=LIB[id];add('c:'+id,D.name+' '+D.w+'×'+D.h)});const gb=document.createElement('button');gb.textContent='❓ Guide';gb.onclick=()=>guide(0);b.appendChild(gb);
+ const add=(id,l,p)=>{const e=document.createElement('button');e.textContent=l;if(S.tool==id)e.className='on';e.onclick=()=>{S.tool=id;sel=null;ui()};(p||b).appendChild(e)};
+ TL.forEach(([id,l])=>add(id,id=='node'?l+' '+'→↓←↑'[S.rot]:l));order.forEach(id=>{const D=LIB[id],g=document.createElement('span');g.className='grp';b.appendChild(g);add('c:'+id,D.name+' '+D.w+'×'+D.h,g);const xb=document.createElement('button');xb.textContent='✕';xb.title='Remove '+D.name+' from the bar';xb.onclick=()=>delChip(id);g.appendChild(xb)});const gb=document.createElement('button');gb.textContent='❓ Guide';gb.onclick=()=>guide(0);b.appendChild(gb);
  const k=done.findIndex(v=>!v),all=k<0,g=G[all?G.length-1:k];
  document.getElementById('hud').innerHTML=all?'<b>THE ENGINE WAKES</b> — every goal certified. Keep building: bigger machines, faster clocks, your own computer.':
-  '<b>'+g.e+'</b> · Goal '+(k+1)+'/'+G.length+': <b>'+g.n+'</b> ('+g.i+' in → '+g.o+' out) — '+g.h+'<br>Unlimited board and frame size · Press ❓ Guide for step-by-step examples · R cycles NOT gate direction (A = auto) · right-drag/WASD pans'}
+  '<b>'+g.e+'</b> · Goal '+(k+1)+'/'+G.length+': <b>'+g.n+'</b> ('+g.i+' in → '+g.o+' out) — '+g.h+'<br>Unlimited board and frame size · Press ❓ Guide for step-by-step examples · ↻ Rotate (or R over a gate) turns it · ✋ drag moves parts · scroll zooms · right-drag/WASD pans'}
 const exm=(cs,f)=>{cs.forEach(([x,y,t,d])=>world.set(x,y,{t,d:d||0,s:0,on:0,val:0,lit:0}));if(f&&!frames.some(q=>q.x==f[0]&&q.y==f[1]))frames.push({x:f[0],y:f[1],w:f[2],h:f[3]});S.tool='hand';cam={x:0,y:-40};save();ui();guide(-1)};
 const P=[
-{t:'Welcome: build a computer from tiny parts',x:'You start with a few simple parts. Build small circuits, turn each into a CHIP, then build bigger chips out of chips, until you have an adder and a counter (the heart of a computer).',d:'Switch      click it to turn on/off\nWire        carries power (glows yellow)\nNOT gate    flips the signal. Power goes in the BACK and out the\n            FRONT (little dot). It turns itself to fit your wires.\n            Press R to force a direction (A = auto).\nLight       lit when power reaches it\nChip Frame  a box: whatever you build inside becomes ONE chip'},
+{t:'Welcome: build a computer from tiny parts',x:'You start with a few simple parts. Build small circuits, turn each into a CHIP, then build bigger chips out of chips, until you have an adder and a counter (the heart of a computer).',d:'Switch      click it to turn on/off\nWire        carries power (glows yellow)\nNOT gate    flips the signal. Power goes in the BACK and out the\n            FRONT (little dot). Pick ↻ Rotate and click a gate to turn it.\n            (R sets the direction of new gates.)\nLight       lit when power reaches it\nChip Frame  a box: whatever you build inside becomes ONE chip'},
 {t:'Example 1: a Switch turns on a Light',x:'Press Place, then click the Switch with ✋ Toggle. The wire turns yellow and the Light comes on.',d:'[Switch]--Wire--Wire--[Light]',b:()=>exm([[10,10,'key'],[11,10,'thread'],[12,10,'thread'],[13,10,'lamp']])},
 {t:'Example 2: the NOT gate flips things',x:'Place it, then click the Switch. Switch OFF makes the Light ON, and Switch ON makes the Light OFF.',d:'[Switch] -> [NOT] -> Wire -> [Light]\n  off        flips       ON',b:()=>exm([[10,13,'key'],[11,13,'node',0],[12,13,'thread'],[13,13,'lamp']])},
 {t:'Example 3: make your first chip (NOR gate)',x:'Place it. Click the orange Input Pins with ✋ Toggle and watch the blue Output Pin: it is ON only when BOTH inputs are OFF. Then pick Make Chip and click inside the gold box. Type a name (try NOR Gate). The chip shrinks to a tiny block (inputs along the top edge, outputs along the bottom) and appears in the bottom bar; if it matches the current goal it is certified.',d:'Input 1 --+\n          Wire --[NOT]-- Wire -- Output\nInput 2 --+\n(wire both inputs together = OR, then NOT flips it = NOR)',b:()=>exm([[10,18,'in'],[11,18,'thread'],[12,18,'thread'],[12,19,'thread'],[10,20,'in'],[11,20,'thread'],[12,20,'thread'],[13,19,'node',0],[14,19,'thread'],[15,19,'out']],[10,18,6,3])},
-{t:'Example 4: use chips as parts, climb the goals',x:'Your chip is now a part. Click it in the bar and place it anywhere. Draw a new Chip Frame, put chips and wires inside, add Input and Output Pins on the edge, then Make Chip again. Pins are numbered top to bottom (Input 1, Input 2 ...). Controls: R cycles NOT gate direction (A = auto), drag to paint wire, right-drag or WASD to pan.',d:'AND gate = NOR of two flipped inputs:\n\nA --[NOR (both inputs wired to A)]--+\n                                   [NOR]-- Out\nB --[NOR (both inputs wired to B)]--+\n\nGoals: NOR > AND > XOR > Half Adder > Full Adder\n       > Memory Latch > 4-bit Adder > Tally Core'}];
+{t:'Example 4: use chips as parts, climb the goals',x:'Your chip is now a part. Click it in the bar and place it anywhere. Draw a new Chip Frame, put chips and wires inside, add Input and Output Pins on the edge, then Make Chip again. Pins are numbered top to bottom (Input 1, Input 2 ...). Controls: Use ↻ Rotate to turn a NOT gate, scroll to zoom, drag to paint wire, right-drag or WASD to pan.',d:'AND gate = NOR of two flipped inputs:\n\nA --[NOR (both inputs wired to A)]--+\n                                   [NOR]-- Out\nB --[NOR (both inputs wired to B)]--+\n\nGoals: NOR > AND > XOR > Half Adder > Full Adder\n       > Memory Latch > 4-bit Adder > Tally Core'}];
+let mv=null,sel=null;const HT={thread:1,key:4,node:3,lamp:4,in:2,out:2,fp:6};
+function setSel(c){const it=world.get(c[0],c[1]);if(!it){sel=null;return}if(it.t=='fp'){const I=it.inst;sel={x:I.x,y:I.y,w:I.def.w,h:I.def.h,ht:6,ref:world.get(I.x,I.y)}}else sel={x:c[0],y:c[1],w:1,h:1,ht:HT[it.t],ref:it}}
+function selDraw2(ox,oy){let s=null;if(mv&&mv.moved&&sel)s={...sel,x:hov[0]-(mv.off?mv.off[0]:0),y:hov[1]-(mv.off?mv.off[1]:0)};else if(sel&&world.get(sel.x,sel.y)===sel.ref)s=sel;if(!s)return;
+ const K2=(x,y)=>(x+5000)*20000+(y+5000),S2=new Set();
+ for(let j=0;j<s.h;j++)for(let i=0;i<s.w;i++){const cx=s.x+i,cy=s.y+j,px=ox+(cx-cy)*8,py=oy+(cx+cy)*4;
+  for(let dx=-8;dx<8;dx++){const e=Math.round(4-Math.abs(dx+.5)/2);if(e<=0)continue;for(let r=py-s.ht-e;r<py+e;r++)S2.add(K2(px+dx,r))}}
+ const O=new Map();let sx=0,sy=0,n=0;
+ for(const k of S2){const x=Math.floor(k/20000)-5000,y=k%20000-5000;sx+=x;sy+=y;n++;
+  for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){if(!a&&!b)continue;const q=K2(x+a,y+b);if(!S2.has(q)&&!O.has(q))O.set(q,[x+a,y+b])}}
+ const mx=sx/n,my=sy/n,L=[...O.values()].sort((p,q)=>Math.atan2(p[1]-my,p[0]-mx)-Math.atan2(q[1]-my,q[0]-mx)),ph=Math.floor(performance.now()/70);
+ X.fillStyle='#fff';L.forEach((p,i)=>{if((i+ph)%8<4)X.fillRect(p[0],p[1],1,1)})}
+function dot(x0,y0,x1,y1){const n=Math.max(Math.abs(x1-x0),Math.abs(y1-y0));if(!n)return;for(let i=0;i<=n;i++)if(i%4<2)X.fillRect(Math.round(x0+(x1-x0)*i/n),Math.round(y0+(y1-y0)*i/n),1,1)}
+function selDraw(ox,oy){let s=null;if(mv&&mv.moved&&sel)s={...sel,x:hov[0]-(mv.off?mv.off[0]:0),y:hov[1]-(mv.off?mv.off[1]:0)};else if(sel&&world.get(sel.x,sel.y)===sel.ref)s=sel;if(!s)return;
+ const P=(cx,cy)=>[ox+(cx-cy)*8,oy+(cx+cy)*4],a=P(s.x,s.y),b=P(s.x+s.w-1,s.y),c=P(s.x+s.w-1,s.y+s.h-1),d=P(s.x,s.y+s.h-1),h=s.ht;
+ const T=[a[0],a[1]-5],R=[b[0]+7,b[1]],B=[c[0],c[1]+4],L=[d[0]-8,d[1]],U=p=>[p[0],p[1]-h];X.fillStyle='#fff';
+ dot(...U(T),...U(R));dot(...U(R),...R);dot(...R,...B);dot(...B,...L);dot(...L,...U(L));dot(...U(L),...U(T))}
+function pick(px,py){for(const o of[6,3,0]){const c=cellAt(px,py+o),it=world.get(c[0],c[1]);if(it&&HT[it.t]>=o)return c}return cellAt(px,py)}
+function beginMove(){const it=mv.it;mv.moved=1;if(it.t=='fp'){const I=it.inst,D=I.def;mv.inst=I;mv.off=[mv.o[0]-I.x,mv.o[1]-I.y];mv.cells=[];mv.home=[I.x,I.y];for(let ly=0;ly<D.h;ly++)for(let lx=0;lx<D.w;lx++){mv.cells.push({lx,ly,c:world.get(I.x+lx,I.y+ly)});world.set(I.x+lx,I.y+ly,null)}}else{mv.home=mv.o;world.set(mv.o[0],mv.o[1],null)}}
+function endMove(){if(!mv.moved){const c=mv.it;if(c.t=='key')c.on^=1;else if(c.t=='in')c.val^=1;return}
+ if(mv.inst){const I=mv.inst;let nx=hov[0]-mv.off[0],ny=hov[1]-mv.off[1];if(mv.cells.some(q=>world.get(nx+q.lx,ny+q.ly))){nx=mv.home[0];ny=mv.home[1]}I.x=nx;I.y=ny;mv.cells.forEach(q=>world.set(nx+q.lx,ny+q.ly,q.c))}
+ else{let t=hov;if(world.get(t[0],t[1]))t=mv.home;world.set(t[0],t[1],mv.it);sel={x:t[0],y:t[1],w:1,h:1,ht:HT[mv.it.t],ref:mv.it}}if(mv.inst){const I=mv.inst;sel={x:I.x,y:I.y,w:I.def.w,h:I.def.h,ht:6,ref:world.get(I.x,I.y)}}save()}
+function ghostDraw(ox,oy){if(!mv||!mv.moved)return;X.globalAlpha=.65;
+ if(mv.inst){for(const q of mv.cells){const x=hov[0]-mv.off[0]+q.lx,y=hov[1]-mv.off[1]+q.ly;drawCell(q.c,ox+(x-y)*8,oy+(x+y)*4)}}
+ else drawCell(mv.it,ox+(hov[0]-hov[1])*8,oy+(hov[0]+hov[1])*4);X.globalAlpha=1}
+function delChip(id){const D=LIB[id];
+ const d=document.getElementById('gd');d.style.display='flex';d.innerHTML='<div class=card><h3></h3><p>Copies already on the board stay where they are.</p><div class=nv></div></div>';d.querySelector('h3').textContent='Delete '+D.name+'?';
+ const nv=d.querySelector('.nv'),mk=(l,f)=>{const b=document.createElement('button');b.textContent=l;b.onclick=f;nv.appendChild(b)};
+ mk('Delete',()=>{order=order.filter(o=>o!=id);if(S.tool=='c:'+id)S.tool='hand';d.style.display='none';ui();save()});mk('Cancel',()=>d.style.display='none')}
 function nameBox(def,cb){const d=document.getElementById('gd');d.style.display='flex';d.innerHTML='<div class=card><h3>Name your chip</h3><p>It becomes a tiny block: inputs along its top edge, outputs along its bottom edge, and goes in your bottom bar.</p><input id=nm maxlength=20 style="font:inherit;padding:4px;width:100%;box-sizing:border-box"><div class=nv></div></div>';
  const i=d.querySelector('#nm');i.value=def;const go=()=>{const v=i.value.trim()||def;d.style.display='none';cb(v)};
  const nv=d.querySelector('.nv'),a=document.createElement('button'),c=document.createElement('button');a.textContent='Make chip';a.onclick=go;c.textContent='Cancel';c.onclick=()=>d.style.display='none';nv.append(a,c);
