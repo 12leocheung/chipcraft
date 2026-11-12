@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Substrate</title>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><title>Substrate</title>
 <style>
 :root{--bg:#10121c;--pn:#1b1f33;--tx:#dfe6ff;--ac:#ffb454;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root{--bg:#10121c}}
@@ -6,16 +6,20 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font:12px/1.
 #app{display:flex;flex-direction:column;height:100%}
 #hud{padding:5px 8px;background:var(--pn);border-bottom:1px solid #2c3354}
 #hud b{color:var(--ac)}
-canvas{flex:1;min-height:0;width:100%;object-fit:contain;image-rendering:pixelated;touch-action:none;background:#0b0d16}
+#cw{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#0b0d16}canvas{flex:none;image-rendering:pixelated;touch-action:none;background:#0b0d16}
+#fab{position:absolute;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px}#fab button{width:42px;height:42px;font-size:20px;padding:0;opacity:.92}
+html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none}
 #msg{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:#000c;padding:4px 10px;border:1px solid var(--ac);border-radius:4px;display:none;max-width:90%}
 #gd{position:absolute;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:10px;z-index:5}#gd .card{background:var(--pn);border:1px solid var(--ac);border-radius:6px;padding:12px 14px;max-width:560px;max-height:100%;overflow:auto}#gd pre{background:#0b0d16;padding:8px;overflow-x:auto;margin:8px 0;font:inherit}#gd h3{margin:0 0 6px;color:var(--ac)}#gd .nv{display:flex;gap:6px;margin-top:8px}
 .bar{display:flex;gap:4px;padding:4px;background:var(--pn);flex-wrap:wrap}
 button{font:inherit;background:#262c4a;color:var(--tx);border:1px solid #3b4478;border-radius:3px;padding:4px 7px;cursor:pointer}
 .grp{display:inline-flex}.grp button:first-child{border-radius:3px 0 0 3px}.grp button:last-child{border-radius:0 3px 3px 0;border-left:0;color:#ff9a9a}.grp:hover{outline:1px solid var(--ac);border-radius:3px}
 button.on{background:var(--ac);color:#111;border-color:var(--ac)}
-</style></head><body><div id="app"><div id="hud"></div><canvas id="cv" width="480" height="270"></canvas><div id="msg"></div><div id="gd"></div><div class="bar" id="bar"></div></div>
+button{touch-action:manipulation;flex:none}
+@media (max-width:700px),(pointer:coarse){.hint{display:none}.bar{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}button{min-height:42px;padding:6px 11px}#hud{max-height:46px;overflow:auto}}
+</style></head><body><div id="app"><div id="hud"></div><div id="cw"><canvas id="cv" width="480" height="270"></canvas><div id="fab"><button id="zin">＋</button><button id="zout">－</button><button id="zhome">⌖</button></div></div><div id="msg"></div><div id="gd"></div><div class="bar" id="bar"></div></div>
 <script>
-let W=480,H=270;const cv=document.getElementById('cv'),X=cv.getContext('2d'),DX=[1,0,-1,0],DY=[0,1,0,-1],N=32;
+let W=480,H=270,PX=2;const cv=document.getElementById('cv'),X=cv.getContext('2d'),DX=[1,0,-1,0],DY=[0,1,0,-1],N=32;
 const inb=(g,x,y)=>g.inf||(x>=0&&y>=0&&x<g.w&&y<g.h);
 const K=(x,y)=>(x+1e5)*2e5+(y+1e5),dec=k=>[Math.floor(k/2e5)-1e5,k%2e5-1e5];
 function serW(){const o=[];for(const[k,c]of world.m){const[x,y]=dec(k);if(c.t=='fp'){if(!c.lx&&!c.ly)o.push({x,y,chip:c.inst.def.id})}else o.push({x,y,t:c.t,d:c.d,auto:c.auto,on:c.on,val:c.val})}return o}
@@ -150,30 +154,36 @@ function draw(){X.fillStyle='#0b0d16';X.fillRect(0,0,W,H);const ox=Math.round(W/
 const cellAt=(px,py)=>{const a=(px-W/2-cam.x)/8,b=(py-40-cam.y)/4;return[Math.round((a+b)/2),Math.round((b-a)/2)]};
 const pt=e=>{const r=cv.getBoundingClientRect(),s=Math.min(r.width/W,r.height/H);return[(e.clientX-r.left-(r.width-W*s)/2)/s,(e.clientY-r.top-(r.height-H*s)/2)/s,s]};
 let down=0,pan=null;
-cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);const[px,py]=pt(e);if(e.button==2||e.button==1||e.shiftKey){pan=[e.clientX,e.clientY,cam.x,cam.y];return}
- down=1;const c=pick(px,py);hov=c;if(S.tool=='frame')fs=c;else if(S.tool=='hand'){const it=world.get(c[0],c[1]);setSel(c);if(it)mv={o:c,it,moved:0}}else{if(S.tool=='rot')setSel(c);act(c,1)}};
-cv.onpointermove=e=>{const[px,py,s]=pt(e);hov=mv&&mv.moved?cellAt(px,py):pick(px,py);if(mv&&!mv.moved&&(hov[0]!=mv.o[0]||hov[1]!=mv.o[1]))beginMove();if(pan){cam.x=pan[2]+(e.clientX-pan[0])/s;cam.y=pan[3]+(e.clientY-pan[1])/s}else if(down&&(S.tool=='thread'||S.tool=='erase'))act(hov,0)};
-cv.onpointerup=()=>{if(pan){pan=null;return}down=0;if(mv){endMove();mv=null}if(fs&&S.tool=='frame'){mkFrame(fs,hov);fs=null}};
+cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY]);if(ptrs.size>1){startGesture();return}const[px,py]=pt(e);if(e.button==2||e.button==1||e.shiftKey||S.tool=='pan'){pan=[e.clientX,e.clientY,cam.x,cam.y];return}
+ down=1;const c=pick(px,py);hov=c;if(S.tool=='frame')fs=c;else if(S.tool=='hand'){const it=world.get(c[0],c[1]);setSel(c);if(it)mv={o:c,it,moved:0}}else{if(S.tool=='rot')setSel(c);if(e.pointerType=='touch'){ta=()=>act(c,1);tt=setTimeout(()=>{tt=0;const f=ta;ta=null;f&&f()},70)}else act(c,1)}};
+cv.onpointermove=e=>{if(ptrs.has(e.pointerId))ptrs.set(e.pointerId,[e.clientX,e.clientY]);if(ptrs.size>1){gesture();return}const[px,py,s]=pt(e);hov=mv&&mv.moved?cellAt(px,py):pick(px,py);if(mv&&!mv.moved&&(hov[0]!=mv.o[0]||hov[1]!=mv.o[1]))beginMove();if(pan){cam.x=pan[2]+(e.clientX-pan[0])/s;cam.y=pan[3]+(e.clientY-pan[1])/s}else if(down&&!tt&&(S.tool=='thread'||S.tool=='erase'))act(hov,0)};
+cv.onpointerup=e=>{ptrs.delete(e.pointerId);if(gs){if(!ptrs.size)gs=null;return}if(tt){clearTimeout(tt);tt=0;const f=ta;ta=null;f&&f()}if(pan){pan=null;return}down=0;if(mv){endMove();mv=null}if(fs&&S.tool=='frame'){mkFrame(fs,hov);fs=null}};
 cv.oncontextmenu=e=>e.preventDefault();
-let zi=2,lz=0;const ZS=[.7,.85,1,1.5,2,3,4];
-cv.onwheel=e=>{e.preventDefault();if(Date.now()-lz<90)return;const nz=Math.max(0,Math.min(ZS.length-1,zi+(e.deltaY<0?1:-1)));if(nz==zi)return;lz=Date.now();
- const[px,py]=pt(e),ow=W,oh=H,wx=px-W/2-cam.x,wy=py-40-cam.y;zi=nz;W=Math.round(480/ZS[zi]);H=Math.round(270/ZS[zi]);cv.width=W;cv.height=H;cam.x=px*W/ow-W/2-wx;cam.y=py*H/oh-40-wy};
+let zl=1,lz=0;const PD=[-1,0,1,2,4,6];cv.onpointercancel=e=>cv.onpointerup(e);
+cv.onwheel=e=>{e.preventDefault();if(Date.now()-lz<90)return;const[px,py]=pt(e);lz=Date.now();zoomAt(e.deltaY<0?1:-1,px,py)};
 const keys={};onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key=='r'||e.key=='R'){const c=world.get(hov[0],hov[1]);if(c&&c.t=='node')c.d=(c.d+1)%4;else{S.rot=(S.rot+1)%4;ui()}}};onkeyup=e=>keys[e.key.toLowerCase()]=0;
-const TL=[['hand','✋ Toggle/Move'],['thread','Wire'],['key','Switch'],['node','NOT gate'],['rot','↻ Rotate'],['lamp','Light'],['in','Input Pin'],['out','Output Pin'],['frame','Chip Frame'],['seal','Make Chip'],['erase','Erase']];
+const TL=[['hand','✋ Toggle/Move'],['pan','✥ Pan'],['thread','Wire'],['key','Switch'],['node','NOT gate'],['rot','↻ Rotate'],['lamp','Light'],['in','Input Pin'],['out','Output Pin'],['frame','Chip Frame'],['seal','Make Chip'],['erase','Erase']];
 function ui(){const b=document.getElementById('bar');b.innerHTML='';
- const add=(id,l,p)=>{const e=document.createElement('button');e.textContent=l;if(S.tool==id)e.className='on';e.onclick=()=>{S.tool=id;sel=null;ui()};(p||b).appendChild(e)};
+ const add=(id,l,p)=>{const e=document.createElement('button');e.textContent=l;if(S.tool==id)e.className='on';e.onclick=()=>{if(S.tool==id&&id=='node')S.rot=(S.rot+1)%4;S.tool=id;sel=null;ui()};(p||b).appendChild(e)};
  TL.forEach(([id,l])=>add(id,id=='node'?l+' '+'→↓←↑'[S.rot]:l));order.forEach(id=>{const D=LIB[id],g=document.createElement('span');g.className='grp';b.appendChild(g);add('c:'+id,D.name+' '+D.w+'×'+D.h,g);const xb=document.createElement('button');xb.textContent='✕';xb.title='Remove '+D.name+' from the bar';xb.onclick=()=>delChip(id);g.appendChild(xb)});const gb=document.createElement('button');gb.textContent='❓ Guide';gb.onclick=()=>guide(0);b.appendChild(gb);
  const k=done.findIndex(v=>!v),all=k<0,g=G[all?G.length-1:k];
  document.getElementById('hud').innerHTML=all?'<b>THE ENGINE WAKES</b> — every goal certified. Keep building: bigger machines, faster clocks, your own computer.':
-  '<b>'+g.e+'</b> · Goal '+(k+1)+'/'+G.length+': <b>'+g.n+'</b> ('+g.i+' in → '+g.o+' out) — '+g.h+'<br>Unlimited board and frame size · Press ❓ Guide for step-by-step examples · ↻ Rotate (or R over a gate) turns it · ✋ drag moves parts · scroll zooms · right-drag/WASD pans'}
+  '<b>'+g.e+'</b> · Goal '+(k+1)+'/'+G.length+': <b>'+g.n+'</b> ('+g.i+' in → '+g.o+' out) — '+g.h+'<br><span class=hint>Unlimited board and frame size · Press ❓ Guide for step-by-step examples · ↻ Rotate (or R over a gate) turns it · ✋ drag moves parts · scroll zooms · right-drag/WASD pans</span>'}
 const exm=(cs,f)=>{cs.forEach(([x,y,t,d])=>world.set(x,y,{t,d:d||0,s:0,on:0,val:0,lit:0}));if(f&&!frames.some(q=>q.x==f[0]&&q.y==f[1]))frames.push({x:f[0],y:f[1],w:f[2],h:f[3]});S.tool='hand';cam={x:0,y:-40};save();ui();guide(-1)};
 const P=[
 {t:'Welcome: build a computer from tiny parts',x:'You start with a few simple parts. Build small circuits, turn each into a CHIP, then build bigger chips out of chips, until you have an adder and a counter (the heart of a computer).',d:'Switch      click it to turn on/off\nWire        carries power (glows yellow)\nNOT gate    flips the signal. Power goes in the BACK and out the\n            FRONT (little dot). Pick ↻ Rotate and click a gate to turn it.\n            (R sets the direction of new gates.)\nLight       lit when power reaches it\nChip Frame  a box: whatever you build inside becomes ONE chip'},
 {t:'Example 1: a Switch turns on a Light',x:'Press Place, then click the Switch with ✋ Toggle. The wire turns yellow and the Light comes on.',d:'[Switch]--Wire--Wire--[Light]',b:()=>exm([[10,10,'key'],[11,10,'thread'],[12,10,'thread'],[13,10,'lamp']])},
 {t:'Example 2: the NOT gate flips things',x:'Place it, then click the Switch. Switch OFF makes the Light ON, and Switch ON makes the Light OFF.',d:'[Switch] -> [NOT] -> Wire -> [Light]\n  off        flips       ON',b:()=>exm([[10,13,'key'],[11,13,'node',0],[12,13,'thread'],[13,13,'lamp']])},
 {t:'Example 3: make your first chip (NOR gate)',x:'Place it. Click the orange Input Pins with ✋ Toggle and watch the blue Output Pin: it is ON only when BOTH inputs are OFF. Then pick Make Chip and click inside the gold box. Type a name (try NOR Gate). The chip shrinks to a tiny block (inputs along the top edge, outputs along the bottom) and appears in the bottom bar; if it matches the current goal it is certified.',d:'Input 1 --+\n          Wire --[NOT]-- Wire -- Output\nInput 2 --+\n(wire both inputs together = OR, then NOT flips it = NOR)',b:()=>exm([[10,18,'in'],[11,18,'thread'],[12,18,'thread'],[12,19,'thread'],[10,20,'in'],[11,20,'thread'],[12,20,'thread'],[13,19,'node',0],[14,19,'thread'],[15,19,'out']],[10,18,6,3])},
-{t:'Example 4: use chips as parts, climb the goals',x:'Your chip is now a part. Click it in the bar and place it anywhere. Draw a new Chip Frame, put chips and wires inside, add Input and Output Pins on the edge, then Make Chip again. Pins are numbered top to bottom (Input 1, Input 2 ...). Controls: Use ↻ Rotate to turn a NOT gate, scroll to zoom, drag to paint wire, right-drag or WASD to pan.',d:'AND gate = NOR of two flipped inputs:\n\nA --[NOR (both inputs wired to A)]--+\n                                   [NOR]-- Out\nB --[NOR (both inputs wired to B)]--+\n\nGoals: NOR > AND > XOR > Half Adder > Full Adder\n       > Memory Latch > 4-bit Adder > Tally Core'}];
-let mv=null,sel=null;const HT={thread:1,key:4,node:3,lamp:4,in:2,out:2,fp:6};
+{t:'Example 4: use chips as parts, climb the goals',x:'Your chip is now a part. Click it in the bar and place it anywhere. Draw a new Chip Frame, put chips and wires inside, add Input and Output Pins on the edge, then Make Chip again. Pins are numbered top to bottom (Input 1, Input 2 ...). Controls: Use ↻ Rotate to turn a NOT gate. Phone: pinch to zoom, two fingers to pan (or the ✥ Pan tool), ＋/－ buttons zoom, tap the NOT gate button again to change its direction. Mouse: scroll to zoom, drag to paint wire, right-drag or WASD to pan.',d:'AND gate = NOR of two flipped inputs:\n\nA --[NOR (both inputs wired to A)]--+\n                                   [NOR]-- Out\nB --[NOR (both inputs wired to B)]--+\n\nGoals: NOR > AND > XOR > Half Adder > Full Adder\n       > Memory Latch > 4-bit Adder > Tally Core'}];
+let mv=null,sel=null,ptrs=new Map(),gs=null,tt=0,ta=null;const HT={thread:1,key:4,node:3,lamp:4,in:2,out:2,fp:6};
+function fit(){const r=document.getElementById('cw').getBoundingClientRect();if(r.width<10)return;const base=Math.max(2,Math.round(r.width/480));PX=Math.max(1,base+PD[zl]);W=Math.max(40,Math.floor(r.width/PX));H=Math.max(40,Math.floor(r.height/PX));cv.width=W;cv.height=H;cv.style.width=W*PX+'px';cv.style.height=H*PX+'px'}
+function zoomAt(dir,ix,iy){const n=Math.max(0,Math.min(PD.length-1,zl+dir));if(n==zl)return;const oW=W,oH=H,oP=PX,wx=ix-oW/2-cam.x,wy=iy-40-cam.y;zl=n;fit();cam.x=(ix-oW/2)*oP/PX-wx;cam.y=H/2+(iy-oH/2)*oP/PX-40-wy}
+function cancelDrag(){clearTimeout(tt);tt=0;ta=null;if(mv&&mv.moved){if(mv.inst)mv.cells.forEach(q=>world.set(mv.home[0]+q.lx,mv.home[1]+q.ly,q.c));else world.set(mv.home[0],mv.home[1],mv.it)}mv=null;down=0;fs=null;pan=null}
+function startGesture(){cancelDrag();const p=[...ptrs.values()];gs={d:Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1]),mx:(p[0][0]+p[1][0])/2,my:(p[0][1]+p[1][1])/2}}
+function gesture(){const p=[...ptrs.values()];if(!gs||p.length<2)return;const d=Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1]),mx=(p[0][0]+p[1][0])/2,my=(p[0][1]+p[1][1])/2;
+ cam.x+=(mx-gs.mx)/PX;cam.y+=(my-gs.my)/PX;gs.mx=mx;gs.my=my;
+ if(d>gs.d*1.35||d<gs.d/1.35){const r=cv.getBoundingClientRect();zoomAt(d>gs.d?1:-1,(mx-r.left)/PX,(my-r.top)/PX);gs.d=d}}
 function setSel(c){const it=world.get(c[0],c[1]);if(!it){sel=null;return}if(it.t=='fp'){const I=it.inst;sel={x:I.x,y:I.y,w:I.def.w,h:I.def.h,ht:6,ref:world.get(I.x,I.y)}}else sel={x:c[0],y:c[1],w:1,h:1,ht:HT[it.t],ref:it}}
 function selDraw2(ox,oy){let s=null;if(mv&&mv.moved&&sel)s={...sel,x:hov[0]-(mv.off?mv.off[0]:0),y:hov[1]-(mv.off?mv.off[1]:0)};else if(sel&&world.get(sel.x,sel.y)===sel.ref)s=sel;if(!s)return;
  const K2=(x,y)=>(x+5000)*20000+(y+5000),S2=new Set();
@@ -209,6 +219,7 @@ function guide(p){const d=document.getElementById('gd');if(p<0||p>=P.length){d.s
  d.innerHTML='<div class=card><h3>'+e.t+' ('+(p+1)+'/'+P.length+')</h3><p>'+e.x+'</p><pre></pre><div class=nv></div></div>';
  d.querySelector('pre').textContent=e.d;const nv=d.querySelector('.nv'),mk=(l,f)=>{const b=document.createElement('button');b.textContent=l;b.onclick=f;nv.appendChild(b)};
  if(e.b)mk('▶ Place this example',e.b);if(p>0)mk('◀ Back',()=>guide(p-1));if(p<P.length-1)mk('Next ▶',()=>guide(p+1));mk('Close',()=>guide(-1))}
+fit();new ResizeObserver(fit).observe(document.getElementById('cw'));document.getElementById('zin').onclick=()=>zoomAt(1,W/2,H/2);document.getElementById('zout').onclick=()=>zoomAt(-1,W/2,H/2);document.getElementById('zhome').onclick=()=>{zl=1;fit();cam={x:0,y:-40}};
 load();ui();try{if(!localStorage.getItem('substrate_seen')){localStorage.setItem('substrate_seen',1);guide(0)}}catch(e){guide(0)}let acc=0,last=performance.now();
 (function loop(t){acc+=t-last;last=t;let n=0;while(acc>50&&n++<4){world.step();acc-=50}if(acc>200)acc=0;
  const sp=2;if(keys.w||keys.arrowup)cam.y+=sp;if(keys.s||keys.arrowdown)cam.y-=sp;if(keys.a||keys.arrowleft)cam.x+=sp;if(keys.d||keys.arrowright)cam.x-=sp;
